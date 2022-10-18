@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Example LOGBACK Configuration File http://logback.qos.ch/manual/configuration.html -->
+<configuration scan="true" scanPeriod="30 seconds">
+	<springProperty scope="context" name="appName" source="spring.application.name"/>
+	<!-- online -->
+	<springProfile name="test,online">
+		<appender name="stdout" class="ch.qos.logback.core.rolling.RollingFileAppender">
+			<file>${LOGS_DIR}/stdout.log</file>
+			<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+				<fileNamePattern>${LOGS_DIR}/otherdays/stdout.log.%d{yyyy-MM-dd}</fileNamePattern>
+				<maxHistory>40</maxHistory>
+			</rollingPolicy>
+			<encoder>
+				<pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} {%thread} %-5level %logger{50}-%L - %msg%n</pattern>
+			</encoder>
+		</appender>
+		<appender name="RocketmqClientAppender" class="ch.qos.logback.core.rolling.RollingFileAppender">
+			<file>${LOGS_DIR}/rocketmq.log</file>
+			<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+				<fileNamePattern>${LOGS_DIR}/otherdays/rocketmq.log.%d{yyyy-MM-dd}
+				</fileNamePattern>
+				<maxHistory>40</maxHistory>
+			</rollingPolicy>
+			<encoder>
+				<pattern>%d{yyy-MM-dd HH:mm:ss,GMT+8} %p %t - %m%n</pattern>
+				<charset class="java.nio.charset.Charset">UTF-8</charset>
+			</encoder>
+		</appender>
+		<logger name="RocketmqCommon" level="INFO" additivity="false">
+			<appender-ref ref="RocketmqClientAppender" />
+		</logger>
+		<logger name="RocketmqRemoting" level="INFO" additivity="false">
+			<appender-ref ref="RocketmqClientAppender" />
+		</logger>
+		<logger name="RocketmqClient" level="INFO" additivity="false">
+			<appender-ref ref="RocketmqClientAppender" />
+		</logger>
+		<logger name="com.netflix.util.concurrent.ShutdownEnabledTimer" level="warn" additivity="false">
+			<appender-ref ref="stdout" />
+		</logger>
+		<root level="INFO">
+			<appender-ref ref="stdout" />
+		</root>
+	</springProfile>
+
+	<!-- local -->
+	<springProfile name="local">
+		<appender name="stdout" class="ch.qos.logback.core.ConsoleAppender">
+			<encoder>
+				<pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} {%thread} %-5level %logger{50}-%L - %msg%n</pattern>
+			</encoder>
+		</appender>
+	    <logger name="RocketmqCommon" level="INFO" additivity="false">
+	        <appender-ref ref="stdout"/>
+	    </logger>
+	    <logger name="RocketmqRemoting" level="INFO" additivity="false">
+	        <appender-ref ref="stdout"/>
+	    </logger>
+	    <logger name="RocketmqClient" level="INFO" additivity="false">
+	        <appender-ref ref="stdout"/>
+	    </logger>
+	    <logger name="com.netflix.util.concurrent.ShutdownEnabledTimer" level="warn" additivity="false">
+	        <appender-ref ref="stdout" />
+	    </logger>
+		<root level="INFO">
+			<appender-ref ref="stdout" />
+		</root>
+	</springProfile>
+</configuration>

@@ -1,0 +1,23 @@
+*.class
+ 
+# Package Files #
+*.war
+*.ear
+ 
+# ignore Maven generated target folders
+target
+LOGS_DIR_IS_UNDEFINED
+logs
+pom.xml.versionsBackup
+ 
+# ignore eclipse files
+.project
+.classpath
+.settings
+.metadata
+.cache
+.logs
+
+# ignore idea files
+.idea
+*.iml

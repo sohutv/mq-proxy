@@ -1,0 +1,102 @@
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>broadcast-consumer</title>
+    <script src="http://libs.baidu.com/jquery/2.0.0/jquery.min.js"></script>
+</head>
+<body>
+mq-proxy-consumer地址: <input type="text" id="url" value="127.0.0.1:8081"><br>
+topic: <input type="text" id="topic" value="mqcloud-http-test-topic"><br>
+consumer: <input type="text" id="consumer" value="broadcast-mqcloud-http-consumer"><br>
+clientId: <input type="text" id="clientId" value="127.0.0.1"><br>
+消息量: <span id="msgCount"></span><br>
+重试消息量: <span id="retryMsgCount"></span><br>
+<input id="start" type="button" value="开始" onclick="consume()"> <input id="pause" type="button" value="暂停" onclick="pause()" disabled="disabled">
+<script>
+    var param = {};
+    var paused = false;
+    var msgCount = 0;
+    var retryMsgCount = 0;
+    var pullIntervalInMillis = 1000;
+    var url = 0;
+
+    function consume() {
+        if ($("#topic").val().length == 0) {
+            alert("topic is blank");
+            return;
+        }
+        if ($("#consumer").val().length == 0) {
+            alert("consumer is blank");
+            return;
+        }
+        param.topic = $.trim($("#topic").val());
+        param.consumer = $.trim($("#consumer").val());
+        param.clientId = $.trim($("#clientId").val());
+        $("#pause").removeAttr("disabled");
+        $("#start").attr("disabled","disabled");
+        paused = false;
+        url = $("#url").val();
+        httpConsume();
+    }
+
+    function httpConsume() {
+        if (paused) {
+            console.log("paused")
+            ack();
+            return;
+        }
+        $.ajax({
+            type: "GET",
+            url: "http://" + url + "/mq/message",
+            data: param,
+            success: function (data) {
+                pullIntervalInMillis = 1000;
+                if (data.status == 200) {
+                    param.requestId = data.result.requestId;
+                    if (data.result.msgListSize > 0) {
+                        msgCount += data.result.msgListSize;
+                        $("#msgCount").html(msgCount);
+                        pullIntervalInMillis = 10;
+                    }
+                    if (data.result.retryMsgListSize > 0) {
+                        retryMsgCount += data.result.retryMsgListSize;
+                        $("#retryMsgCount").html(retryMsgCount);
+                    }
+                } else {
+                    console.log(data.message);
+                }
+                setTimeout("httpConsume()", pullIntervalInMillis);
+            }, error: function (XmlHttpRequest, textStatus, errorThrown) {
+                console.error(textStatus)
+                setTimeout("httpConsume()", 1000);
+            }
+        });
+    }
+
+    function pause() {
+        paused = true;
+        $("#start").removeAttr("disabled");
+        $("#pause").attr("disabled","disabled");
+    }
+
+    function ack() {
+        if (param.requestId) {
+            $.ajax({
+                type: "GET",
+                url: "http://" + url + "/mq/ack",
+                data: param,
+                success: function (data) {
+                    if (data.status == 200) {
+                        param.requestId = undefined;
+                    } else {
+                        console.log(data.message);
+                    }
+                }, error: function (XmlHttpRequest, textStatus, errorThrown) {
+                    console.error(textStatus)
+                }
+            });
+        }
+    }
+</script>
+</body>
+</html>

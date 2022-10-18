@@ -1,0 +1,39 @@
+spring:
+  profiles:
+    active: local
+  jackson:
+    default-property-inclusion: non_null
+  main:
+    allow-bean-definition-overriding: true
+  cloud:
+    sentinel:
+      filter:
+        enabled: false
+
+# 端口配置
+server:
+  port: 8082
+  tomcat: 
+    maxThreads: 500
+    uriEncoding: utf-8
+    basedir: ${LOGS_DIR:./}
+    accesslog: 
+      enabled: true
+      buffered: false
+      pattern: '%{yyyy-MM-dd HH:mm:ss.sss}t %I %r %h %s %b %D %F %{X-Forwarded-For}i'
+
+management:
+  server:
+    port: 8087
+  endpoints:
+    web:
+      exposure: 
+        include: '*'
+        exclude: shutdown,restart,pause,heapdump,auditevents,threaddump,refresh
+  endpoint:
+    env:
+      post:
+        enabled: false
+
+mqcloud:
+  domain: 127.0.0.1:8080

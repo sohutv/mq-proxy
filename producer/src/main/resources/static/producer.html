@@ -1,0 +1,79 @@
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>producer</title>
+    <script src="http://libs.baidu.com/jquery/2.0.0/jquery.min.js"></script>
+</head>
+<body>
+mq-proxy-producer地址: <input type="text" id="url" value="127.0.0.1:8082"><br>
+topic: <input type="text" id="topic" value="mqcloud-http-test-topic"><br>
+producer: <input type="text" id="producer" value="mqcloud-http-test-topic-producer"><br>
+发送消息量: <input type="text" id="destCount" value="1000"><br>
+成功消息量: <span id="msgCount"></span><br>
+<input id="start" type="button" value="开始" onclick="produce()"> <input id="pause" type="button" value="暂停"
+                                                                       onclick="pause()" disabled="disabled">
+<script>
+    var param = {};
+    var paused = false;
+    var destCount = 0;
+    var msgCount = 0;
+    var url = 0;
+
+    function produce() {
+        if ($("#topic").val().length == 0) {
+            alert("topic is blank");
+            return;
+        }
+        if ($("#producer").val().length == 0) {
+            alert("producer is blank");
+            return;
+        }
+        param.topic = $.trim($("#topic").val());
+        param.producer = $.trim($("#producer").val());
+        destCount = Number($.trim($("#destCount").val()))
+        $("#pause").removeAttr("disabled");
+        $("#start").attr("disabled", "disabled");
+        paused = false;
+        url = $("#url").val();
+        httpProduce();
+    }
+
+    function httpProduce() {
+        if (paused) {
+            console.log("paused")
+            pause()
+            return;
+        }
+        param.message = "http生产测试" + msgCount;
+        $.ajax({
+            type: "POST",
+            url: "http://" + url + "/mq/produce",
+            data: param,
+            success: function (data) {
+                if (data.status == 200) {
+                    msgCount += 1;
+                    $("#msgCount").html(msgCount);
+                } else {
+                    console.log(data.message);
+                }
+                if (msgCount < destCount) {
+                    setTimeout("httpProduce()", 10);
+                } else {
+                    msgCount = 0;
+                    pause();
+                }
+            }, error: function (XmlHttpRequest, textStatus, errorThrown) {
+                console.error(textStatus)
+                setTimeout("httpProduce()", 1000);
+            }
+        });
+    }
+
+    function pause() {
+        paused = true;
+        $("#start").removeAttr("disabled");
+        $("#pause").attr("disabled", "disabled");
+    }
+</script>
+</body>
+</html>

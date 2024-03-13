@@ -28,6 +28,8 @@ public class FetchRequest {
     private long lockTime;
     // 请求id
     private String requestId;
+    // 是否强制ack
+    private boolean forceAck;
     /**
      * 构建实例
      * @param param
@@ -69,7 +71,8 @@ public class FetchRequest {
                 .append(queueId).append(",")
                 .append(offset).append(",")
                 .append(nextOffset).append(",")
-                .append(lockTime);
+                .append(lockTime).append(",")
+                .append(forceAck);
         return Base64.getUrlEncoder().encodeToString(builder.toString().getBytes());
     }
 
@@ -88,6 +91,9 @@ public class FetchRequest {
         offset = Long.parseLong(strArray[2]);
         nextOffset = Long.parseLong(strArray[3]);
         lockTime = Long.parseLong(strArray[4]);
+        if (strArray.length > 5) {
+            forceAck = Boolean.parseBoolean(strArray[5]);
+        }
     }
 
     /**
@@ -96,6 +102,6 @@ public class FetchRequest {
      * @return
      */
     public boolean isOffsetIllegal() {
-        return brokerName == null || offset < 0 || nextOffset < offset;
+        return brokerName == null || offset < 0 || (nextOffset < offset && !forceAck);
     }
 }

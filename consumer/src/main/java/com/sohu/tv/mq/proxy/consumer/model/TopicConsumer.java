@@ -1,7 +1,7 @@
 package com.sohu.tv.mq.proxy.consumer.model;
 
 import lombok.Data;
-import org.apache.rocketmq.common.protocol.heartbeat.MessageModel;
+import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 
 /**
  * @author: yongfeigao

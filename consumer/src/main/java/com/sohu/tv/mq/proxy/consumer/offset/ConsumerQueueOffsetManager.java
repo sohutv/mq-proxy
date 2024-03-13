@@ -316,7 +316,7 @@ public class ConsumerQueueOffsetManager implements MessageQueueListener {
                 COMMITTED_OFFSET_FIELD);
         String value = redis.hget(key, committedOffsetField);
         // 未提交过
-        if (value == null) {
+        if (value == null || fetchRequest.isForceAck()) {
             redis.hset(key, committedOffsetField, String.valueOf(fetchRequest.getNextOffset()));
         } else {
             long committedOffset = NumberUtils.toLong(value);
@@ -404,10 +404,11 @@ public class ConsumerQueueOffsetManager implements MessageQueueListener {
         String key = toKey(clientId);
         for (MessageQueue mq : mqs) {
             long offset = consumerProxy.searchOffset(mq, timestamp);
-            String committedOffsetField = toCommittedOffsetField(mq);
-            redis.hset(key, committedOffsetField, String.valueOf(offset));
-            log.info("clientId:{} consumer:{} mq:{} tm:{} resetOffset:{}", clientId, consumerProxy.getGroup(), mq,
-                    timestamp, offset);
+            redis.hset(key, toCommittedOffsetField(mq), String.valueOf(offset));
+            long maxOffset = consumerProxy.maxOffset(mq);
+            redis.hset(key, toMaxOffsetField(mq), String.valueOf(maxOffset));
+            log.info("clientId:{} consumer:{} mq:{} tm:{} resetOffset:{} maxOffset:{}", clientId, consumerProxy.getGroup(), mq,
+                    timestamp, offset, maxOffset);
         }
     }
 

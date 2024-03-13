@@ -17,6 +17,9 @@ import org.springframework.util.CollectionUtils;
 import java.util.LinkedList;
 import java.util.List;
 
+import static com.sohu.index.tv.mq.common.PullResponse.Status.NO_MATCHED_MSG;
+import static com.sohu.index.tv.mq.common.PullResponse.Status.OFFSET_ILLEGAL;
+
 /**
  * 消息抓取器
  *
@@ -58,10 +61,17 @@ public class MessageFetcher {
         try {
             // 消息拉取
             PullResponse pullResponse = consumer.pull(queueOffset.getMessageQueue(), queueOffset.getCommittedOffset());
+            if (OFFSET_ILLEGAL == pullResponse.getStatus() || NO_MATCHED_MSG == pullResponse.getStatus()) {
+                log.warn("pull from {}:{} queueOffset:{} status:{}", request.getTopic(), request.getConsumer(),
+                        queueOffset, pullResponse.getStatus());
+                queueOffset.setMaxOffset(pullResponse.getMaxOffset() - 1);
+                request.setForceAck(true);
+            }
             // 更新最大offset
             consumer.updateMaxOffset(request.getClientId(), queueOffset, pullResponse.getMaxOffset());
             // 已经提交过偏移量的消费者但是未拉取到消息需要解锁
-            if (!queueOffset.isFirstConsume() && !pullResponse.isStatusFound()) {
+            if (!queueOffset.isFirstConsume() && !pullResponse.isStatusFound() &&
+                    (OFFSET_ILLEGAL != pullResponse.getStatus() && NO_MATCHED_MSG != pullResponse.getStatus())) {
                 unlock = true;
             }
             // 重置下次需要的数据

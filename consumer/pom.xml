@@ -49,6 +49,10 @@
             <groupId>com.sohu.tv</groupId>
             <artifactId>mq-client-open</artifactId>
         </dependency>
+	<dependency>
+            <groupId>org.hibernate.validator</groupId>
+            <artifactId>hibernate-validator</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
@@ -66,6 +70,7 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring-boot.version}</version>
                 <configuration>
                     <mainClass>com.sohu.tv.mq.proxy.consumer.Application</mainClass>
                     <executable>true</executable>

@@ -18,8 +18,8 @@ import org.apache.rocketmq.client.exception.MQBrokerException;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
-import org.apache.rocketmq.common.protocol.heartbeat.MessageModel;
 import org.apache.rocketmq.remoting.exception.RemotingException;
+import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -76,6 +76,7 @@ public class ConsumerManager {
         consumer.setMqCloudDomain(mqcloudDomain);
         // 置空偏移量存储
         consumer.getConsumer().setOffsetStore(new EmptyOffsetStore());
+        consumer.getConsumer().setEnableStreamRequestType(false);
         // 注册队列变更监听
         consumerProxy = new ConsumerProxy(consumer, topicConsumer.getMessageModel());
         ConsumerQueueOffsetManager manager = new ConsumerQueueOffsetManager(consumerProxy, redis);

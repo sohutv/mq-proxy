@@ -158,7 +158,12 @@ public class ConsumerQueueOffsetManager implements MessageQueueListener {
                 rst = (int) (count2 - count1);
             }
             if (rst == 0) {
-                return (int) (o1.getLastConsumeTimestamp() - o2.getLastConsumeTimestamp());
+                // 消费时间从旧到新
+                if (o1.getLastConsumeTimestamp() < o2.getLastConsumeTimestamp()) {
+                    return -1;
+                } else if (o1.getLastConsumeTimestamp() > o2.getLastConsumeTimestamp()) {
+                    return 1;
+                }
             }
             return rst;
         }).collect(Collectors.toList());

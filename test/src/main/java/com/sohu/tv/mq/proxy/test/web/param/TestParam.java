@@ -2,7 +2,7 @@ package com.sohu.tv.mq.proxy.producer.web.param;
 
 import lombok.Data;
 
-import org.hibernate.validator.constraints.NotBlank;
+import javax.validation.constraints.NotBlank;
 
 /**
  * 消息参数

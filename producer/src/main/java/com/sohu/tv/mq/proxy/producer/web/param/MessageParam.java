@@ -33,4 +33,18 @@ public class MessageParam {
     @Min(1)
     @Max(10)
     private Integer asyncRetryTimesIfSendFailed;
+
+    // 发送有序消息id
+    private String orderId;
+
+    // 是否顺序轮训发送
+    private boolean ordered;
+
+    public boolean isOrderIdEmpty() {
+        if (orderId == null) {
+            return true;
+        }
+        orderId = orderId.trim();
+        return orderId.isEmpty();
+    }
 }

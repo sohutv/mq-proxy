@@ -1,9 +1,11 @@
 package com.sohu.tv.mq.proxy.consumer.model;
 
 import com.sohu.tv.mq.proxy.consumer.web.param.ConsumeParam;
+import com.sohu.tv.mq.proxy.util.WebUtil;
 import lombok.Data;
 import org.apache.commons.lang3.StringUtils;
 
+import javax.servlet.http.HttpServletRequest;
 import java.util.Base64;
 
 /**
@@ -30,18 +32,31 @@ public class FetchRequest {
     private String requestId;
     // 是否强制ack
     private boolean forceAck;
+    // 客户端ip
+    private String clientIp;
+
     /**
      * 构建实例
-     * @param param
-     * @return
      */
     public static FetchRequest build(ConsumeParam param) {
+        return build(null, param);
+    }
+
+    /**
+     * 构建实例
+     */
+    public static FetchRequest build(HttpServletRequest request, ConsumeParam param) {
         FetchRequest fetchRequest = new FetchRequest();
         fetchRequest.setTopic(param.getTopic());
         fetchRequest.setConsumer(param.getConsumer());
         fetchRequest.setRequestId(param.getRequestId());
         if (StringUtils.isNotBlank(param.getClientId())) {
             fetchRequest.setClientId(param.getClientId());
+        }
+        if (param.isClientIpBlank() && request != null) {
+            fetchRequest.setClientIp(WebUtil.getIp(request));
+        } else {
+            fetchRequest.setClientIp(param.getClientIp());
         }
         fetchRequest.decode();
         return fetchRequest;
@@ -103,5 +118,9 @@ public class FetchRequest {
      */
     public boolean isOffsetIllegal() {
         return brokerName == null || offset < 0 || (nextOffset < offset && !forceAck);
+    }
+
+    public String getAckInfo() {
+        return brokerName + "-" + queueId + ":" + offset + "," + nextOffset + "," + lockTime + "," + forceAck;
     }
 }

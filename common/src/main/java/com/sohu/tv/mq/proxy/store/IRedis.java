@@ -44,4 +44,8 @@ public interface IRedis {
     Long hdel(String key, String... field);
 
     Long hsetnx(String key, String field, String value);
+
+    Long incr(String key);
+
+    String set(String key, String value);
 }

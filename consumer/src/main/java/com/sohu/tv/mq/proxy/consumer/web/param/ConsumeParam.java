@@ -19,4 +19,16 @@ public class ConsumeParam {
     private String clientId;
     // 确认上次消费成功的标识
     private String requestId;
+    // 是否使用cookie
+    private boolean useCookie;
+    // 客户端ip: 用于记录当前哪个客户端在消费队列
+    private String clientIp;
+
+    public boolean isClientIpBlank() {
+        if (clientIp == null) {
+            return true;
+        }
+        clientIp = clientIp.trim();
+        return clientIp.length() == 0;
+    }
 }

@@ -1,6 +1,7 @@
 package com.sohu.tv.mq.proxy.consumer.model;
 
 import com.sohu.index.tv.mq.common.PullResponse.Status;
+import com.sohu.tv.mq.proxy.model.MQProxyResponse;
 import lombok.Data;
 
 import java.util.List;
@@ -21,6 +22,10 @@ public class FetchResult {
     private List<Message> msgList;
     // 重试消息列表
     private List<Message> retryMsgList;
+    // 队列信息
+    private ConsumerQueueOffset queueInfo;
+    // ack响应
+    private MQProxyResponse ackInfo;
 
     public int getMsgListSize() {
         return msgList == null ? 0 : msgList.size();

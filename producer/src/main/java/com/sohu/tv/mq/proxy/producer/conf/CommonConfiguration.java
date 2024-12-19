@@ -1,8 +1,13 @@
 package com.sohu.tv.mq.proxy.producer.conf;
 
+import com.sohu.tv.mq.proxy.store.IRedis;
+import com.sohu.tv.mq.proxy.store.PooledRedis;
+import com.sohu.tv.mq.proxy.store.RedisConfiguration;
+import com.sohu.tv.mq.proxy.util.ServiceLoadUtil;
 import okhttp3.ConnectionPool;
 import okhttp3.OkHttpClient;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,6 +27,19 @@ public class CommonConfiguration {
 
     @Value("${mqcloud.domain}")
     private String mqcloudDomain;
+
+    @Bean
+    @ConfigurationProperties("redis")
+    public RedisConfiguration redisConfiguration() {
+        return new RedisConfiguration();
+    }
+
+    @Bean
+    public IRedis redis(RedisConfiguration redisConfiguration) {
+        IRedis redis = ServiceLoadUtil.loadService(IRedis.class, PooledRedis.class);
+        redis.init(redisConfiguration);
+        return redis;
+    }
 
     @Bean
     public RestTemplate mqCloudRestTemplate(RestTemplateBuilder restTemplateBuilder) {

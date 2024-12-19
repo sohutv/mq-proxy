@@ -3,6 +3,7 @@ package com.sohu.tv.mq.proxy.util;
 import org.apache.commons.lang3.StringUtils;
 
 import javax.servlet.ServletRequest;
+import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -16,6 +17,8 @@ import java.io.IOException;
 public class WebUtil {
 
     public static final String MQCLOUD_USER_TOKEN = "MU";
+
+    public static final String REQUEST_ID = "rid";
 
     /**
      * 从request中获取客户端ip
@@ -105,5 +108,47 @@ public class WebUtil {
      */
     public static void redirect(HttpServletResponse response, HttpServletRequest request, String path) throws IOException {
         response.sendRedirect(request.getContextPath() + path);
+    }
+
+    /**
+     * 从cookie中获取requestId
+     */
+    public static String getRequestIdFromCookie(HttpServletRequest request) {
+        Cookie cookie = getCookie(request, REQUEST_ID);
+        if (cookie != null) {
+            return cookie.getValue();
+        }
+        return null;
+    }
+
+    /**
+     * 获取cookie
+     *
+     * @param request
+     * @param name
+     * @return
+     */
+    public static Cookie getCookie(HttpServletRequest request, String name) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if (name.equals(cookie.getName())) {
+                    return cookie;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 设置requestId到cookie
+     */
+    public static void setRequestIdToCookie(HttpServletResponse response, String value) {
+        Cookie cookie = new Cookie(REQUEST_ID, value);
+        cookie.setPath("/");
+        if (value == null) {
+            cookie.setMaxAge(0);
+        }
+        response.addCookie(cookie);
     }
 }

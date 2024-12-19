@@ -2,10 +2,7 @@ package com.sohu.tv.mq.proxy.consumer.rocketmq;
 
 import com.sohu.index.tv.mq.common.PullResponse;
 import com.sohu.tv.mq.proxy.consumer.config.ConsumerConfigManager;
-import com.sohu.tv.mq.proxy.consumer.model.ConsumerQueueOffset;
-import com.sohu.tv.mq.proxy.consumer.model.FetchRequest;
-import com.sohu.tv.mq.proxy.consumer.model.FetchResult;
-import com.sohu.tv.mq.proxy.consumer.model.Message;
+import com.sohu.tv.mq.proxy.consumer.model.*;
 import com.sohu.tv.mq.proxy.consumer.rocketmq.ConsumerManager.ConsumerProxy;
 import com.sohu.tv.mq.proxy.model.MQProxyResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -16,9 +13,6 @@ import org.springframework.util.CollectionUtils;
 
 import java.util.LinkedList;
 import java.util.List;
-
-import static com.sohu.index.tv.mq.common.PullResponse.Status.NO_MATCHED_MSG;
-import static com.sohu.index.tv.mq.common.PullResponse.Status.OFFSET_ILLEGAL;
 
 /**
  * 消息抓取器
@@ -46,12 +40,13 @@ public class MessageFetcher {
         // 获取消费代理
         ConsumerProxy consumer = consumerManager.getConsumer(request);
         // offset ack
-        consumer.offsetAck(request);
+        MQProxyResponse<String> ackResponse = consumer.offsetAck(request);
         // 选择合适的队列
-        ConsumerQueueOffset queueOffset = consumer.choose(request.getClientId());
-        if (queueOffset == null) {
-            return MQProxyResponse.buildErrorResponse("no queue choose");
+        ConsumerQueueOffsetResult consumerQueueOffsetResult = consumer.choose(request.getClientId());
+        if (consumerQueueOffsetResult == null || consumerQueueOffsetResult.getChosenConsumerQueueOffset() == null) {
+            return MQProxyResponse.buildErrorResponse("no consumerQueueOffsetResult");
         }
+        ConsumerQueueOffset queueOffset = consumerQueueOffsetResult.getChosenConsumerQueueOffset();
         // 拉取结果
         FetchResult fetchResult = null;
         // 是否需要解锁
@@ -61,23 +56,29 @@ public class MessageFetcher {
         try {
             // 消息拉取
             PullResponse pullResponse = consumer.pull(queueOffset.getMessageQueue(), queueOffset.getCommittedOffset());
-            if (OFFSET_ILLEGAL == pullResponse.getStatus() || NO_MATCHED_MSG == pullResponse.getStatus()) {
+            // 没有新消息，尝试更新最大offset
+            if (pullResponse.isNoNewMsgStatus()) {
+                consumerManager.updateNewerMaxOffset(consumerQueueOffsetResult.getConsumerQueueOffsets(), consumer);
+            }
+            // offset错误需要修正
+            if (pullResponse.isOffsetErrorStatus()) {
                 log.warn("pull from {}:{} queueOffset:{} status:{}", request.getTopic(), request.getConsumer(),
                         queueOffset, pullResponse.getStatus());
                 queueOffset.setMaxOffset(pullResponse.getMaxOffset() - 1);
                 request.setForceAck(true);
             }
             // 更新最大offset
-            consumer.updateMaxOffset(request.getClientId(), queueOffset, pullResponse.getMaxOffset());
+            consumer.updateMaxOffset(request, queueOffset, pullResponse.getMaxOffset());
             // 已经提交过偏移量的消费者但是未拉取到消息需要解锁
-            if (!queueOffset.isFirstConsume() && !pullResponse.isStatusFound() &&
-                    (OFFSET_ILLEGAL != pullResponse.getStatus() && NO_MATCHED_MSG != pullResponse.getStatus())) {
+            if (!queueOffset.isFirstConsume() && !pullResponse.isFoundStatus() && !pullResponse.isOffsetErrorStatus()) {
                 unlock = true;
             }
             // 重置下次需要的数据
             request.reset(queueOffset, pullResponse.getNextOffset());
             // 构建结果
             fetchResult = buildFetchResult(consumer, pullResponse);
+            fetchResult.setQueueInfo(queueOffset);
+            fetchResult.setAckInfo(ackResponse);
             // 拉取重试消息
             fetchResult.setRetryMsgList(fetchRetryMessages(consumer, request.getClientId()));
         } catch (Exception e) {

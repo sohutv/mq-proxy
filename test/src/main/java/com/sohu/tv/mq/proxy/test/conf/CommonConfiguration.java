@@ -62,7 +62,7 @@ public class CommonConfiguration {
     }
 
     @Bean
-    public IRedis redis(RedisConfiguration redisConfiguration) throws Exception {
+    public IRedis redis(RedisConfiguration redisConfiguration) {
         IRedis redis = ServiceLoadUtil.loadService(IRedis.class, PooledRedis.class);
         redis.init(redisConfiguration);
         return redis;

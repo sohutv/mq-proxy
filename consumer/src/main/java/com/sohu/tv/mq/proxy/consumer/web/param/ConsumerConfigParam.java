@@ -19,19 +19,19 @@ public class ConsumerConfigParam {
     @NotBlank
     private String consumer;
 
-    // 每批消息消最大拉取量 最新32，最大128
-    @Min(32)
+    // 每批消息消最大拉取量 最小1，最大128
+    @Min(1)
     @Max(128)
     private Integer maxPullSize;
 
-    // 每批消息消费超时毫秒 最小10秒，最大1小时
+    // 每批消息消费超时毫秒 最小10秒，最大36小时
     @Min(10000)
-    @Max(3600000)
+    @Max(129600000)
     private Long consumeTimeoutInMillis;
 
-    // 消息拉取超时毫秒 最小1秒，最大20秒
+    // 消息拉取超时毫秒 最小1秒，最大60秒
     @Min(1000)
-    @Max(20000)
+    @Max(60000)
     private Long pullTimeoutInMillis;
 
     // 是否暂停

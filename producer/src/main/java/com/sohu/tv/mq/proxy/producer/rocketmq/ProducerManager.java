@@ -6,6 +6,7 @@ import com.sohu.tv.mq.proxy.model.MQException;
 import com.sohu.tv.mq.proxy.model.MQProxyResponse;
 import com.sohu.tv.mq.proxy.producer.model.TopicProducer;
 import com.sohu.tv.mq.proxy.producer.web.param.MessageParam;
+import com.sohu.tv.mq.proxy.store.IRedis;
 import com.sohu.tv.mq.proxy.util.ServiceLoadUtil;
 import com.sohu.tv.mq.rocketmq.RocketMQProducer;
 import lombok.extern.slf4j.Slf4j;
@@ -13,8 +14,10 @@ import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.common.ServiceState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import redis.clients.jedis.exceptions.JedisDataException;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -28,6 +31,9 @@ import java.util.concurrent.ConcurrentMap;
 @Slf4j
 @Component
 public class ProducerManager {
+
+    @Autowired
+    private IRedis redis;
 
     @Value("${mqcloud.domain}")
     private String mqcloudDomain;
@@ -92,7 +98,7 @@ public class ProducerManager {
      * @author: yongfeigao
      * @date: 2022/6/24 16:01
      */
-    public static class ProducerProxy {
+    public class ProducerProxy {
         private Logger log;
 
         private RocketMQProducer producer;
@@ -101,6 +107,7 @@ public class ProducerManager {
             log = LoggerFactory.getLogger(producerGroup);
             producer = ServiceLoadUtil.loadService(RocketMQProducer.class, RocketMQProducer.class);
             producer.construct(producerGroup, topic);
+            producer.setMessageQueueSelector(new RoundRobinMessageQueueSelector());
             // 设置重复回调消费
             producer.setResendResultConsumer(result -> {
                 if (result.isSuccess()) {
@@ -129,6 +136,22 @@ public class ProducerManager {
          * @return
          */
         public Result<SendResult> send(MessageParam param) {
+            // 根据orderId发送有序消息
+            if (!param.isOrderIdEmpty()) {
+                return sendOrderIdMessage(param);
+            }
+            // 发送有序消息
+            if (param.isOrdered()) {
+                return sendOrderMessage(param);
+            }
+            // 发送普通消息
+            return sendCommonMessage(param);
+        }
+
+        /**
+         * 发送普通消息
+         */
+        public Result<SendResult> sendCommonMessage(MessageParam param) {
             MQMessage mqMessage = MQMessage.build(param.getMessage()).setKeys(param.getKeys());
             if (param.getDelayLevel() != null) {
                 mqMessage.setDelayTimeLevel(param.getDelayLevel());
@@ -140,6 +163,41 @@ public class ProducerManager {
                 mqMessage.setRetryTimes(param.getAsyncRetryTimesIfSendFailed());
             }
             return producer.send(mqMessage);
+        }
+
+        /**
+         * 发送有序消息
+         */
+        public Result<SendResult> sendOrderIdMessage(MessageParam param) {
+            Long num = Long.valueOf(param.getOrderId().hashCode());
+            return producer.publishOrder(param.getMessage(), param.getKeys(), num);
+        }
+
+        /**
+         * 发送有序消息
+         */
+        public Result<SendResult> sendOrderMessage(MessageParam param) {
+            return producer.publishOrder(param.getMessage(), param.getKeys(), getOrderNum());
+        }
+
+        private Long getOrderNum() {
+            String key = "order:" + producer.getTopic();
+            try {
+                return getOrderNum(key);
+            } catch (JedisDataException e) {
+                // 处理incr溢出情况
+                log.error("key:{} getOrderNum error", key, e);
+                redis.set(key, "0");
+            }
+            return getOrderNum(key);
+        }
+
+        private Long getOrderNum(String key) {
+            Long num = redis.incr(key);
+            if (num >= Long.MAX_VALUE) {
+                redis.set(key, "0");
+            }
+            return num;
         }
 
         public RocketMQProducer getProducer() {

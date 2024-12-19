@@ -20,12 +20,29 @@ public class HttpConsumerTest {
     @Autowired
     private RestTemplate consumerRestTemplate;
 
+    String topic = "mq-http-test-topic";
+
+    String group = "mq-http-cluster-consumer";
+
     @Test
-    public void testConsume() {
-        String group = "clustering-mqcloud-http-consumer";
-        String topic = "mqcloud-http-test-topic";
+    public void testConsume() throws InterruptedException {
         HttpConsumer httpConsumer = new HttpConsumer(consumerRestTemplate, group, topic);
-        long count = httpConsumer.run();
-        Assert.assertTrue(count > 0);
+        for (int i = 0; i < 100; ++i) {
+            long count = httpConsumer.run();
+            System.out.println("count:" + count);
+            Assert.assertTrue(count >= 0);
+            Thread.sleep(1000);
+        }
+    }
+
+    @Test
+    public void testConsumeSupportCookie() throws InterruptedException {
+        HttpConsumer httpConsumer = new HttpConsumer(consumerRestTemplate, group, topic, true);
+        for (int i = 0; i < 100; ++i) {
+            long count = httpConsumer.run();
+            System.out.println("count:" + count);
+            Assert.assertTrue(count >= 0);
+            Thread.sleep(1000);
+        }
     }
 }

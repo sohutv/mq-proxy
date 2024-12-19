@@ -2,6 +2,7 @@ package com.sohu.tv.mq.proxy.consumer.web.controller;
 
 import com.sohu.tv.mq.proxy.consumer.config.ConsumerConfigManager;
 import com.sohu.tv.mq.proxy.consumer.model.FetchRequest;
+import com.sohu.tv.mq.proxy.consumer.model.FetchResult;
 import com.sohu.tv.mq.proxy.consumer.rocketmq.ConsumerManager;
 import com.sohu.tv.mq.proxy.consumer.rocketmq.ConsumerManager.ConsumerProxy;
 import com.sohu.tv.mq.proxy.consumer.rocketmq.MessageFetcher;
@@ -10,10 +11,13 @@ import com.sohu.tv.mq.proxy.consumer.web.param.ConsumerConfigParam;
 import com.sohu.tv.mq.proxy.model.MQProxyResponse;
 import com.sohu.tv.mq.proxy.util.WebUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.ServletRequest;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import javax.validation.Valid;
 
 /**
@@ -40,13 +44,33 @@ public class MQController {
     /**
      * 拉取消息
      *
-     * @param offsetAckParam
-     * @return
      * @throws Exception
      */
     @RequestMapping("/message")
-    public MQProxyResponse<?> message(@Valid ConsumeParam param) throws Exception {
-        return messageFetcher.fetch(FetchRequest.build(param));
+    public MQProxyResponse<?> message(@Valid ConsumeParam param, HttpServletRequest request, HttpServletResponse response) throws Exception {
+        getRequestIdFromCookie(param, request);
+        MQProxyResponse<?> mqProxyResponse = messageFetcher.fetch(FetchRequest.build(request, param));
+        saveRequestIdToCookie(param, mqProxyResponse, response);
+        return mqProxyResponse;
+    }
+
+    /**
+     * 从cookie获取request id
+     */
+    private void getRequestIdFromCookie(ConsumeParam param, HttpServletRequest request) {
+        if (param.isUseCookie() && StringUtils.isEmpty(param.getRequestId())) {
+            param.setRequestId(WebUtil.getRequestIdFromCookie(request));
+        }
+    }
+
+    /**
+     * 保存request id到cookie
+     */
+    private void saveRequestIdToCookie(ConsumeParam param, MQProxyResponse<?> mqProxyResponse, HttpServletResponse response) {
+        if (param.isUseCookie() && mqProxyResponse.ok()) {
+            FetchResult fetchResult = (FetchResult) mqProxyResponse.getResult();
+            WebUtil.setRequestIdToCookie(response, fetchResult.getRequestId());
+        }
     }
 
     /**
@@ -57,13 +81,30 @@ public class MQController {
      * @throws Exception
      */
     @RequestMapping("/ack")
-    public MQProxyResponse<?> ack(@Valid ConsumeParam param) throws Exception {
+    public MQProxyResponse<String> ack(@Valid ConsumeParam param, HttpServletRequest request) throws Exception {
+        getRequestIdFromCookie(param, request);
         FetchRequest fetchRequest = FetchRequest.build(param);
         // 获取消费代理
         ConsumerProxy consumer = consumerManager.getConsumer(fetchRequest);
         // offset ack
-        consumer.offsetAck(fetchRequest);
-        return MQProxyResponse.buildOKResponse();
+        return consumer.offsetAck(fetchRequest);
+    }
+
+    /**
+     * unlock
+     *
+     * @param param
+     * @return
+     * @throws Exception
+     */
+    @RequestMapping("/unlock")
+    public MQProxyResponse<String> unlock(@Valid ConsumeParam param, HttpServletRequest request) throws Exception {
+        getRequestIdFromCookie(param, request);
+        FetchRequest fetchRequest = FetchRequest.build(param);
+        // 获取消费代理
+        ConsumerProxy consumer = consumerManager.getConsumer(fetchRequest);
+        // offset ack
+        return consumer.unlock(fetchRequest);
     }
 
     /**

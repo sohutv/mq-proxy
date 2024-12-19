@@ -95,6 +95,16 @@ public class PooledRedis implements IRedis {
         return execute(jedis -> jedis.hsetnx(key, field, value));
     }
 
+    @Override
+    public Long incr(String key) {
+        return execute(jedis -> jedis.incr(key));
+    }
+
+    @Override
+    public String set(String key, String value) {
+        return execute(jedis -> jedis.set(key, value));
+    }
+
     private <R> R execute(Function<Jedis, R> function) {
         try (Jedis jedis = pool.getResource()) {
             return function.apply(jedis);

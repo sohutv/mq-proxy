@@ -95,4 +95,14 @@ public class ClusteredRedis implements IRedis {
     public Long hsetnx(String key, String field, String value) {
         return jedisCluster.hsetnx(key, field, value);
     }
+
+    @Override
+    public Long incr(String key) {
+        return jedisCluster.incr(key);
+    }
+
+    @Override
+    public String set(String key, String value) {
+        return jedisCluster.set(key, value);
+    }
 }

@@ -1,7 +1,9 @@
 package com.sohu.tv.mq.proxy.consumer.rocketmq;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.sohu.index.tv.mq.common.PullResponse;
 import com.sohu.tv.mq.proxy.consumer.model.ConsumerQueueOffset;
+import com.sohu.tv.mq.proxy.consumer.model.ConsumerQueueOffsetResult;
 import com.sohu.tv.mq.proxy.consumer.model.FetchRequest;
 import com.sohu.tv.mq.proxy.consumer.model.TopicConsumer;
 import com.sohu.tv.mq.proxy.consumer.offset.ConsumerQueueOffsetManager;
@@ -9,21 +11,25 @@ import com.sohu.tv.mq.proxy.consumer.offset.EmptyOffsetStore;
 import com.sohu.tv.mq.proxy.model.MQException;
 import com.sohu.tv.mq.proxy.model.MQProxyResponse;
 import com.sohu.tv.mq.proxy.store.IRedis;
-import com.sohu.tv.mq.proxy.util.ServiceLoadUtil;
-import com.sohu.tv.mq.rocketmq.RocketMQProducer;
 import com.sohu.tv.mq.rocketmq.RocketMQPullConsumer;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.rocketmq.client.exception.MQBrokerException;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.exception.RemotingException;
+import org.apache.rocketmq.remoting.protocol.admin.TopicStatsTable;
 import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.*;
 
@@ -36,6 +42,9 @@ import java.util.concurrent.*;
 @Slf4j
 @Component
 public class ConsumerManager {
+
+    public static final String SCHEDULE_UPDATE_NEWER_MAX_OFFSET_TOPIC = "sunmot";
+
     @Autowired
     private IRedis redis;
 
@@ -44,15 +53,28 @@ public class ConsumerManager {
 
     private ConcurrentMap<String, ConsumerProxy> consumerMap = new ConcurrentHashMap<>();
 
-    private ScheduledExecutorService taskExecutorService;
+    // 消息队列变更补偿线程池
+    private ScheduledExecutorService messageQueueChangedExecutorService;
+
+    // 较新的最大偏移量更新线程池
+    private ThreadPoolExecutor newerMaxOffsetUpdateExecutorService;
+
+    // topic级别较新的最大偏移量更新线程池
+    private ScheduledExecutorService topicNewerMaxOffsetUpdateExecutorService;
 
     public ConsumerManager() {
-        taskExecutorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
-            @Override
-            public Thread newThread(Runnable r) {
-                return new Thread(r, "consumerManagerThread");
-            }
-        });
+        messageQueueChangedExecutorService = Executors.newSingleThreadScheduledExecutor(
+                new ThreadFactoryBuilder().setNameFormat("consumerManagerThread").setDaemon(true).build());
+
+        newerMaxOffsetUpdateExecutorService = new ThreadPoolExecutor(
+                Runtime.getRuntime().availableProcessors(),
+                Runtime.getRuntime().availableProcessors() * 2,
+                10, TimeUnit.MINUTES,
+                new ArrayBlockingQueue<>(100),
+                new ThreadFactoryBuilder().setNameFormat("newerMaxOffsetUpdate-%d").setDaemon(true).build());
+
+        topicNewerMaxOffsetUpdateExecutorService = Executors.newSingleThreadScheduledExecutor(
+                new ThreadFactoryBuilder().setNameFormat("topicNewerMaxOffsetUpdateThread").setDaemon(true).build());
         start();
     }
 
@@ -185,16 +207,22 @@ public class ConsumerManager {
      */
     public void start() {
         // 启动队列变更补偿任务
-        taskExecutorService.scheduleAtFixedRate(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    messageQueueChanged();
-                } catch (Throwable e) {
-                    log.error("messageQueueChanged error", e);
-                }
+        messageQueueChangedExecutorService.scheduleAtFixedRate(() -> {
+            try {
+                messageQueueChanged();
+            } catch (Throwable e) {
+                log.error("messageQueueChanged error", e);
             }
         }, 2, 5, TimeUnit.MINUTES);
+
+        // 启动topic级别较新的最大偏移量更新任务
+        topicNewerMaxOffsetUpdateExecutorService.scheduleAtFixedRate(() -> {
+            try {
+                updateNewerMaxOffset();
+            } catch (Throwable e) {
+                log.error("updateNewerMaxOffset error", e);
+            }
+        }, 5, 30, TimeUnit.MINUTES);
     }
 
     /**
@@ -211,6 +239,58 @@ public class ConsumerManager {
                         consumerProxy.getGroup(), e);
             }
         });
+    }
+
+    /**
+     * 更新较新的最大偏移量
+     */
+    public void updateNewerMaxOffset(List<ConsumerQueueOffset> consumerQueueOffsets, ConsumerProxy consumerProxy) {
+        try {
+            newerMaxOffsetUpdateExecutorService.execute(() -> {
+                try {
+                    consumerProxy.updateNewerMaxOffset(consumerQueueOffsets, consumerMap.values());
+                } catch (Throwable e) {
+                    log.error("updateNewerMaxOffset:{} error", consumerProxy.getGroup(), e);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.error("updateNewerMaxOffset:{} rejected, activeCount:{}, queueSize:{}", consumerProxy.getGroup(),
+                    newerMaxOffsetUpdateExecutorService.getActiveCount(),
+                    newerMaxOffsetUpdateExecutorService.getQueue().size(), e);
+        }
+    }
+
+    /**
+     * 更新较新的最大偏移量
+     */
+    public void updateNewerMaxOffset() {
+        String value = redis.get(SCHEDULE_UPDATE_NEWER_MAX_OFFSET_TOPIC);
+        if (StringUtils.isEmpty(value)) {
+            return;
+        }
+        long start = System.currentTimeMillis();
+        String[] topics = value.split(",");
+        for (String topic : topics) {
+            updateNewerMaxOffset(topic);
+        }
+        log.info("updateNewerMaxOffset size:{} cost:{}", topics.length, System.currentTimeMillis() - start);
+    }
+
+    /**
+     * 更新topic较新的最大偏移量
+     */
+    public void updateNewerMaxOffset(String topic) {
+        List<ConsumerProxy> consumerProxies = new ArrayList<>();
+        for(Entry<String, ConsumerProxy> entry : consumerMap.entrySet()) {
+            if(entry.getValue().getTopic().equals(topic)) {
+                consumerProxies.add(entry.getValue());
+            }
+        }
+        if (consumerProxies.isEmpty()) {
+            log.warn("updateNewerMaxOffset:{} consumer is empty", topic);
+            return;
+        }
+        consumerProxies.get(0).updateNewerMaxOffset(consumerProxies);
     }
 
     /**
@@ -242,8 +322,12 @@ public class ConsumerManager {
             return consumer.getConsumer().searchOffset(mq, timestamp);
         }
 
-        public void updateMaxOffset(String clientId, ConsumerQueueOffset consumerQueueOffset, long maxOffset) {
-            getQueueOffsetManager().updateMaxOffset(clientId, consumerQueueOffset, maxOffset);
+        public void updateMaxOffset(FetchRequest request, ConsumerQueueOffset consumerQueueOffset, long maxOffset) {
+            getQueueOffsetManager().updateMaxOffset(request, consumerQueueOffset, maxOffset);
+        }
+
+        public void updateNewerMaxOffset(TopicStatsTable topicStatsTable) {
+            getQueueOffsetManager().updateNewerMaxOffset(topicStatsTable);
         }
 
         public boolean unlock(String clientId, MessageQueue mq) {
@@ -255,8 +339,12 @@ public class ConsumerManager {
             return false;
         }
 
-        public void offsetAck(FetchRequest fetchRequest) {
-            getQueueOffsetManager().updateCommittedOffset(fetchRequest);
+        public MQProxyResponse<String> offsetAck(FetchRequest fetchRequest) {
+            return getQueueOffsetManager().updateCommittedOffset(fetchRequest);
+        }
+
+        public MQProxyResponse<String> unlock(FetchRequest fetchRequest) {
+            return getQueueOffsetManager().unlock(fetchRequest);
         }
 
         /**
@@ -282,7 +370,7 @@ public class ConsumerManager {
             return firstRegister;
         }
 
-        public ConsumerQueueOffset choose(String clientId) throws MQClientException {
+        public ConsumerQueueOffsetResult choose(String clientId) throws MQClientException {
             return getQueueOffsetManager().choose(clientId);
         }
 
@@ -306,6 +394,14 @@ public class ConsumerManager {
 
         public void resetOffset(String clientId, long timestamp) throws MQClientException {
             getQueueOffsetManager().resetOffset(clientId, timestamp);
+        }
+
+        public void updateNewerMaxOffset(List<ConsumerQueueOffset> consumerQueueOffsets, Collection<ConsumerProxy> consumerMap) {
+            getQueueOffsetManager().updateNewerMaxOffset(consumerQueueOffsets, consumerMap);
+        }
+
+        public void updateNewerMaxOffset(List<ConsumerProxy> consumerProxies) {
+            getQueueOffsetManager().updateNewerMaxOffset(consumerProxies);
         }
 
         public void shutdown() {
@@ -385,6 +481,10 @@ public class ConsumerManager {
                 return getQueueOffsetManager().getBroadcastQueueOffsets();
             }
             return getQueueOffsetManager().getClusteringQueueOffsets();
+        }
+
+        public RocketMQPullConsumer consumer() {
+            return consumer;
         }
     }
 

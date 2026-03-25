@@ -24,7 +24,7 @@
 		<okhttp.version>3.8.1</okhttp.version>
 		<commons-lang3.version>3.4</commons-lang3.version>
 		<slf4j.version>1.7.12</slf4j.version>
-		<mq-client.version>5.1.2</mq-client.version>
+		<mq-client.version>5.3.1-SNAPSHOT</mq-client.version>
 		<jedis.version>3.1.0</jedis.version>
 	</properties>
 
@@ -102,6 +102,7 @@
 		<dependency>
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
+			<version>4.13.1</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
@@ -172,7 +173,7 @@
 			<url>file://${project.basedir}/../lib</url>
 			<layout>default</layout>
 			<snapshots>
-				<enabled>false</enabled>
+				<enabled>true</enabled>
 			</snapshots>
 		</repository>
 		<repository>

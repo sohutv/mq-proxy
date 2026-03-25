@@ -19,13 +19,13 @@
     <parent>
         <groupId>org.apache.rocketmq</groupId>
         <artifactId>rocketmq-all</artifactId>
-        <version>5.1.1-sohu-03</version>
+        <version>5.3.1-sohu-02</version>
     </parent>
 
     <modelVersion>4.0.0</modelVersion>
     <packaging>jar</packaging>
-    <artifactId>rocketmq-tools</artifactId>
-    <name>rocketmq-tools ${project.version}</name>
+    <artifactId>rocketmq-srvutil</artifactId>
+    <name>rocketmq-srvutil ${project.version}</name>
 
     <properties>
         <project.root>${basedir}/..</project.root>
@@ -34,31 +34,23 @@
     <dependencies>
         <dependency>
             <groupId>${project.groupId}</groupId>
-            <artifactId>rocketmq-client</artifactId>
+            <artifactId>rocketmq-remoting</artifactId>
         </dependency>
         <dependency>
             <groupId>${project.groupId}</groupId>
-            <artifactId>rocketmq-acl</artifactId>
+            <artifactId>rocketmq-common</artifactId>
         </dependency>
         <dependency>
-            <groupId>${project.groupId}</groupId>
-            <artifactId>rocketmq-srvutil</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.alibaba</groupId>
-            <artifactId>fastjson</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-lang3</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.yaml</groupId>
-            <artifactId>snakeyaml</artifactId>
+            <groupId>commons-cli</groupId>
+            <artifactId>commons-cli</artifactId>
         </dependency>
         <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.googlecode.concurrentlinkedhashmap</groupId>
+            <artifactId>concurrentlinkedhashmap-lru</artifactId>
         </dependency>
     </dependencies>
 </project>

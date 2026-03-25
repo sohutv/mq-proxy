@@ -31,4 +31,8 @@ public class ConsumeParam {
         clientIp = clientIp.trim();
         return clientIp.length() == 0;
     }
+
+    public String getClientName() {
+        return clientId == null ? consumer : consumer + "_" + clientId;
+    }
 }

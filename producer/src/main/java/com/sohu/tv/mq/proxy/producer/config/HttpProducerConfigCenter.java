@@ -38,8 +38,8 @@ public class HttpProducerConfigCenter extends MQConfigCenter<TopicProducer> impl
     }
 
     @Override
-    public void addConfig(TopicProducer config) {
-        producerManager.register(config);
+    public boolean addConfig(TopicProducer config) {
+        return producerManager.register(config);
     }
 
     @Override
@@ -57,6 +57,23 @@ public class HttpProducerConfigCenter extends MQConfigCenter<TopicProducer> impl
     @Override
     public void run(ApplicationArguments args) throws Exception {
         log.info("updateConfig");
-        updateConfig();
+        boolean updateOK = false;
+        while (!updateOK) {
+            try {
+                updateOK = updateConfig();
+            } catch (Exception e) {
+                log.error("updateConfig error", e);
+            }
+            if (updateOK) {
+                log.info("updateConfig success");
+                break;
+            }
+            log.warn("updateConfig failed, retrying...");
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                log.warn("Interrupted while waiting for config update", e);
+            }
+        }
     }
 }

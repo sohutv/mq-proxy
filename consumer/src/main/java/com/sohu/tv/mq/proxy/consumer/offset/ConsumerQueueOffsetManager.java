@@ -1,5 +1,6 @@
 package com.sohu.tv.mq.proxy.consumer.offset;
 
+import com.sohu.index.tv.mq.common.PullResponse;
 import com.sohu.tv.mq.proxy.consumer.model.ConsumerQueueOffset;
 import com.sohu.tv.mq.proxy.consumer.model.ConsumerQueueOffsetResult;
 import com.sohu.tv.mq.proxy.consumer.model.FetchRequest;
@@ -10,6 +11,7 @@ import com.sohu.tv.mq.proxy.store.IRedis;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.rocketmq.client.consumer.MessageQueueListener;
 import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.protocol.admin.TopicOffset;
 import org.apache.rocketmq.remoting.protocol.admin.TopicStatsTable;
@@ -34,6 +36,8 @@ public class ConsumerQueueOffsetManager implements MessageQueueListener {
     public static final String LOCK_FIELD = "l";
     public static final String LAST_CONSUME_TIMESTAMP_FIELD = "t";
     public static final String LAST_CONSUME_CLIENT_IP = "ip";
+    // 消费到时间戳
+    public static final String CONSUME_TO_TIMESTAMP_FIELD = "ct";
     // 较新的最大偏移量字段
     public static final String NEWER_MAX_OFFSET_FIELD = "nmx";
     // 较新的最大偏移量更新锁
@@ -121,16 +125,9 @@ public class ConsumerQueueOffsetManager implements MessageQueueListener {
         // 同步committedOffset
         syncCommittedOffset(key, queueOffset);
         queueOffset.setLockTimestamp(lockTimestamp);
-        // 没有提交过offset，从最大偏移量消费
+        // 没有提交过offset，从头开始消费，防止新加的broker丢失消息
         if (queueOffset.getCommittedOffset() == -1) {
-            long maxOffset = queueOffset.getMaxOffset();
-            try {
-                // 第一次消费，maxOffset可能存在很久没更新的情况，所以需要重新获取一下
-                maxOffset = consumerProxy.maxOffset(queueOffset.getMessageQueue());
-            } catch (Exception e) {
-                log.error("choose:{} maxOffset error, use:{}", queueOffset.getMessageQueue(), maxOffset, e);
-            }
-            queueOffset.setCommittedOffset(maxOffset);
+            queueOffset.setCommittedOffset(0);
             queueOffset.setFirstConsume(true);
         }
         return queueOffset;
@@ -171,6 +168,9 @@ public class ConsumerQueueOffsetManager implements MessageQueueListener {
                     break;
                 case LAST_CONSUME_CLIENT_IP:
                     consumerQueueOffset.setLastConsumeClientIp(value);
+                    break;
+                case CONSUME_TO_TIMESTAMP_FIELD:
+                    consumerQueueOffset.setConsumeToTimestamp(toLong(value));
                     break;
             }
         }
@@ -303,7 +303,8 @@ public class ConsumerQueueOffsetManager implements MessageQueueListener {
     /**
      * 更新最大偏移量
      */
-    public void updateMaxOffset(FetchRequest request, ConsumerQueueOffset consumerQueueOffset, long maxOffset) {
+    public void updateMaxOffset(FetchRequest request, ConsumerQueueOffset consumerQueueOffset, PullResponse pullResponse) {
+        long maxOffset = pullResponse.getMaxOffset();
         String key = toKey(request.getClientId());
         if (maxOffset > consumerQueueOffset.getMaxOffset()) {
             redis.hset(key, toMaxOffsetField(consumerQueueOffset.getMessageQueue()),
@@ -315,6 +316,13 @@ public class ConsumerQueueOffsetManager implements MessageQueueListener {
         // 更新最近消费客户端ip
         if (request.getClientIp() != null) {
             redis.hset(key, toLastConsumeClientIpField(consumerQueueOffset.getMessageQueue()), request.getClientIp());
+        }
+        // 更新消费到的时间戳
+        List<MessageExt> messageExts = pullResponse.getMsgList();
+        if (messageExts != null && !messageExts.isEmpty()) {
+            long consumeToTimestamp = messageExts.get(messageExts.size() - 1).getStoreTimestamp();
+            redis.hset(key, toConsumeToTimestampField(consumerQueueOffset.getMessageQueue()),
+                    String.valueOf(consumeToTimestamp));
         }
     }
 
@@ -483,7 +491,10 @@ public class ConsumerQueueOffsetManager implements MessageQueueListener {
             redis.hset(key, toCommittedOffsetField(mq), String.valueOf(offset));
             long maxOffset = consumerProxy.maxOffset(mq);
             redis.hset(key, toMaxOffsetField(mq), String.valueOf(maxOffset));
-            log.info("clientId:{} mq:{} tm:{} resetOffset:{} maxOffset:{}", clientId, mq, timestamp, offset, maxOffset);
+            // 如果该队列已经被锁定，则需要解锁
+            boolean unlocked = consumerProxy.unlock(clientId, mq);
+            log.info("clientId:{} mq:{} tm:{} resetOffset:{} maxOffset:{} unlocked:{}", clientId, mq, timestamp, offset,
+                    maxOffset, unlocked);
         }
     }
 
@@ -539,6 +550,10 @@ public class ConsumerQueueOffsetManager implements MessageQueueListener {
 
     private String toLastConsumeTimestampField(MessageQueue mq) {
         return toField(mq.getBrokerName(), mq.getQueueId(), LAST_CONSUME_TIMESTAMP_FIELD);
+    }
+
+    public String toConsumeToTimestampField(MessageQueue mq) {
+        return toField(mq.getBrokerName(), mq.getQueueId(), CONSUME_TO_TIMESTAMP_FIELD);
     }
 
     private String toLastConsumeClientIpField(MessageQueue mq) {

@@ -50,4 +50,9 @@ public class EmptyOffsetStore implements OffsetStore {
     public void updateConsumeOffsetToBroker(MessageQueue mq, long offset, boolean isOneway) throws RemotingException,
             MQBrokerException, InterruptedException, MQClientException {
     }
+
+    @Override
+    public void updateAndFreezeOffset(MessageQueue messageQueue, long l) {
+
+    }
 }

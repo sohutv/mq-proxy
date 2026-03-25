@@ -29,6 +29,9 @@ public class MessageParam {
     @Max(18)
     private Integer delayLevel;
 
+    // 定时发送时间戳
+    private Long deliveryTimestamp;
+
     // 如果发送失败后，异步重试次数，默认不重试
     @Min(1)
     @Max(10)
@@ -39,6 +42,8 @@ public class MessageParam {
 
     // 是否顺序轮训发送
     private boolean ordered;
+
+    private String clientIp;
 
     public boolean isOrderIdEmpty() {
         if (orderId == null) {

@@ -10,15 +10,18 @@ import lombok.Data;
  */
 @Data
 public class MQProxyResponse<T> {
+    public static final int OK_STATUS = 200;
+    public static final int ERROR_STATUS = 500;
+    public static final int PARAM_ERROR_STATUS = 400;
     // 请求状态
-    private int status = 200;
+    private int status = OK_STATUS;
     // 提示信息
     private String message;
     // 响应体
     private T result;
 
     public boolean ok() {
-        return 200 == status;
+        return OK_STATUS == status;
     }
 
     public static <T> MQProxyResponse<T> buildOKResponse() {
@@ -43,11 +46,19 @@ public class MQProxyResponse<T> {
     }
 
     public static <T> MQProxyResponse<T> buildParamErrorResponse(String message) {
-        return buildOKResponse(message).resetStatus(400);
+        return buildOKResponse(message).resetStatus(PARAM_ERROR_STATUS);
+    }
+
+    public static <T> MQProxyResponse<T> buildParamErrorResponse(String message, T result) {
+        return buildParamErrorResponse(message).resetResult(result);
     }
 
     public static <T> MQProxyResponse<T> buildErrorResponse(String message) {
-        return buildOKResponse(message).resetStatus(500);
+        return buildOKResponse(message).resetStatus(ERROR_STATUS);
+    }
+
+    public static <T> MQProxyResponse<T> buildErrorResponse(String message, T result) {
+        return buildErrorResponse(message).resetResult(result);
     }
 
     public <T> MQProxyResponse<T> resetStatus(int status) {
@@ -58,5 +69,16 @@ public class MQProxyResponse<T> {
     public <K> MQProxyResponse<K> resetResult(K result) {
         this.result = (T) result;
         return (MQProxyResponse<K>) this;
+    }
+
+    public <K> MQProxyResponse<K> resetMessage(String message) {
+        this.message = message;
+        return (MQProxyResponse<K>) this;
+    }
+
+    public T removeResult() {
+        T result = this.result;
+        this.result = null;
+        return result;
     }
 }

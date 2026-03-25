@@ -38,10 +38,11 @@ public class HttpConsumerConfigCenter extends MQConfigCenter<TopicConsumer> impl
     }
 
     @Override
-    public void addConfig(TopicConsumer config) {
+    public boolean addConfig(TopicConsumer config) {
         // 防止之前已经注册过
         consumerManager.unregister(config.getConsumer());
-        consumerManager.register(config);
+        MQProxyResponse<?> response = consumerManager.register(config);
+        return response.ok();
     }
 
     @Override
@@ -59,6 +60,23 @@ public class HttpConsumerConfigCenter extends MQConfigCenter<TopicConsumer> impl
     @Override
     public void run(ApplicationArguments args) throws Exception {
         log.info("updateConfig");
-        updateConfig();
+        boolean updateOK = false;
+        while (!updateOK) {
+            try {
+                updateOK = updateConfig();
+            } catch (Exception e) {
+                log.error("updateConfig error", e);
+            }
+            if (updateOK) {
+                log.info("updateConfig success");
+                break;
+            }
+            log.warn("updateConfig failed, retrying...");
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                log.warn("Interrupted while waiting for config update", e);
+            }
+        }
     }
 }

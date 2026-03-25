@@ -55,7 +55,8 @@ public abstract class MQConfigCenter<T> {
     /**
      * 更新配置
      */
-    public void updateConfig() {
+    public boolean updateConfig() {
+        boolean updateOK = true;
         Set<T> oldConfigs = configs;
         // 获取新的配置
         this.configs = fetchConfigs();
@@ -75,7 +76,10 @@ public abstract class MQConfigCenter<T> {
                 if (oldConfigs == null || !oldConfigs.contains(config)) {
                     configChanged = true;
                     log.info("add config:{}", config);
-                    addConfig(config);
+                    if (!addConfig(config)) {
+                        log.error("add config failed:{}", config);
+                        updateOK = false;
+                    }
                 }
             }
             // 2.删除不存在的
@@ -92,6 +96,7 @@ public abstract class MQConfigCenter<T> {
         if (configChanged) {
             log.info("config changed from {} to {}", oldConfigs, configs);
         }
+        return updateOK;
     }
 
     /**
@@ -106,7 +111,7 @@ public abstract class MQConfigCenter<T> {
      *
      * @param config
      */
-    public abstract void addConfig(T config);
+    public abstract boolean addConfig(T config);
 
     /**
      * 初始任务执行延时

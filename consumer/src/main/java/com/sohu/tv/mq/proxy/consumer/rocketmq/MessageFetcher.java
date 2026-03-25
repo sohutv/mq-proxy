@@ -55,7 +55,8 @@ public class MessageFetcher {
         boolean unlocked = false;
         try {
             // 消息拉取
-            PullResponse pullResponse = consumer.pull(queueOffset.getMessageQueue(), queueOffset.getCommittedOffset());
+            PullResponse pullResponse = consumer.pull(queueOffset.getMessageQueue(),
+                    queueOffset.getCommittedOffset(), request.getClientIp());
             // 没有新消息，尝试更新最大offset
             if (pullResponse.isNoNewMsgStatus()) {
                 consumerManager.updateNewerMaxOffset(consumerQueueOffsetResult.getConsumerQueueOffsets(), consumer);
@@ -68,7 +69,7 @@ public class MessageFetcher {
                 request.setForceAck(true);
             }
             // 更新最大offset
-            consumer.updateMaxOffset(request, queueOffset, pullResponse.getMaxOffset());
+            consumer.updateMaxOffset(request, queueOffset, pullResponse);
             // 已经提交过偏移量的消费者但是未拉取到消息需要解锁
             if (!queueOffset.isFirstConsume() && !pullResponse.isFoundStatus() && !pullResponse.isOffsetErrorStatus()) {
                 unlock = true;

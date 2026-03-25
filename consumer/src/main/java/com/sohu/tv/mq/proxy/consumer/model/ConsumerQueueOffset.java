@@ -20,6 +20,8 @@ public class ConsumerQueueOffset {
     private long lockTimestamp;
     // 上次消费时间戳
     private long lastConsumeTimestamp;
+    // 消费到的时间戳
+    private long consumeToTimestamp;
     // 上次消费客户端ip
     private String lastConsumeClientIp;
     // 第一次消费

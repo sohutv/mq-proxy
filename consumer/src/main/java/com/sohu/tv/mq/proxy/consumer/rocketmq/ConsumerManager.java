@@ -112,8 +112,9 @@ public class ConsumerManager {
             } else {
                 log.info("consumer:{} register:{} ok", consumerGroup, topic);
             }
+            return MQProxyResponse.buildOKResponse();
         }
-        return MQProxyResponse.buildOKResponse();
+        return MQProxyResponse.buildErrorResponse("consumer:" + consumerGroup + " register failed");
     }
 
     /**
@@ -322,8 +323,8 @@ public class ConsumerManager {
             return consumer.getConsumer().searchOffset(mq, timestamp);
         }
 
-        public void updateMaxOffset(FetchRequest request, ConsumerQueueOffset consumerQueueOffset, long maxOffset) {
-            getQueueOffsetManager().updateMaxOffset(request, consumerQueueOffset, maxOffset);
+        public void updateMaxOffset(FetchRequest request, ConsumerQueueOffset consumerQueueOffset, PullResponse pullResponse) {
+            getQueueOffsetManager().updateMaxOffset(request, consumerQueueOffset, pullResponse);
         }
 
         public void updateNewerMaxOffset(TopicStatsTable topicStatsTable) {
@@ -382,9 +383,9 @@ public class ConsumerManager {
             return consumer.deserialize(me);
         }
 
-        public PullResponse pull(MessageQueue mq, long offset)
+        public PullResponse pull(MessageQueue mq, long offset, String clientIp)
                 throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
-            return consumer.pull(mq, offset);
+            return consumer.pull(mq, offset, clientIp);
         }
 
         public MessageExt viewMessage(String topic, String uniqKey) throws RemotingException, MQBrokerException,

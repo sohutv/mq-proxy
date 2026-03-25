@@ -16,11 +16,6 @@ server:
   tomcat: 
     maxThreads: 500
     uriEncoding: utf-8
-    basedir: ${LOGS_DIR:./}
-    accesslog: 
-      enabled: true
-      buffered: false
-      pattern: '%{yyyy-MM-dd HH:mm:ss.sss}t %I %r %h %s %b %D %F %{X-Forwarded-For}i'
 
 management:
   server:

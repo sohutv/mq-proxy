@@ -8,38 +8,40 @@
 			<file>${LOGS_DIR}/stdout.log</file>
 			<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
 				<fileNamePattern>${LOGS_DIR}/otherdays/stdout.log.%d{yyyy-MM-dd}</fileNamePattern>
-				<maxHistory>40</maxHistory>
+				<maxHistory>10</maxHistory>
 			</rollingPolicy>
 			<encoder>
 				<pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} {%thread} %-5level %logger{50}-%L - %msg%n</pattern>
 			</encoder>
 		</appender>
-		<appender name="RocketmqClientAppender" class="ch.qos.logback.core.rolling.RollingFileAppender">
-			<file>${LOGS_DIR}/rocketmq.log</file>
+		<appender name="asyncStdout" class="ch.qos.logback.classic.AsyncAppender">
+			<queueSize>2048</queueSize>
+			<neverBlock>true</neverBlock>
+			<appender-ref ref="stdout"/>
+		</appender>
+		<appender name="accessLogAppender" class="ch.qos.logback.core.rolling.RollingFileAppender">
+			<file>${LOGS_DIR}/access.log</file>
 			<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-				<fileNamePattern>${LOGS_DIR}/otherdays/rocketmq.log.%d{yyyy-MM-dd}
-				</fileNamePattern>
-				<maxHistory>40</maxHistory>
+				<fileNamePattern>${LOGS_DIR}/otherdays/access.log.%d{yyyy-MM-dd}</fileNamePattern>
+				<maxHistory>10</maxHistory>
 			</rollingPolicy>
 			<encoder>
-				<pattern>%d{yyy-MM-dd HH:mm:ss,GMT+8} %p %t - %m%n</pattern>
-				<charset class="java.nio.charset.Charset">UTF-8</charset>
+				<pattern>%msg%n</pattern>
 			</encoder>
 		</appender>
-		<logger name="RocketmqCommon" level="INFO" additivity="false">
-			<appender-ref ref="RocketmqClientAppender" />
-		</logger>
-		<logger name="RocketmqRemoting" level="INFO" additivity="false">
-			<appender-ref ref="RocketmqClientAppender" />
-		</logger>
-		<logger name="RocketmqClient" level="INFO" additivity="false">
-			<appender-ref ref="RocketmqClientAppender" />
+		<appender name="asyncAccessLogAppender" class="ch.qos.logback.classic.AsyncAppender">
+			<queueSize>2048</queueSize>
+			<neverBlock>true</neverBlock>
+			<appender-ref ref="accessLogAppender"/>
+		</appender>
+		<logger name="accessLog" level="INFO" additivity="false">
+			<appender-ref ref="asyncAccessLogAppender"/>
 		</logger>
 		<logger name="com.netflix.util.concurrent.ShutdownEnabledTimer" level="warn" additivity="false">
-			<appender-ref ref="stdout" />
+			<appender-ref ref="asyncStdout"/>
 		</logger>
 		<root level="INFO">
-			<appender-ref ref="stdout" />
+			<appender-ref ref="asyncStdout"/>
 		</root>
 	</springProfile>
 
@@ -50,15 +52,7 @@
 				<pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} {%thread} %-5level %logger{50}-%L - %msg%n</pattern>
 			</encoder>
 		</appender>
-	    <logger name="RocketmqCommon" level="INFO" additivity="false">
-	        <appender-ref ref="stdout"/>
-	    </logger>
-	    <logger name="RocketmqRemoting" level="INFO" additivity="false">
-	        <appender-ref ref="stdout"/>
-	    </logger>
-	    <logger name="RocketmqClient" level="INFO" additivity="false">
-	        <appender-ref ref="stdout"/>
-	    </logger>
+
 	    <logger name="com.netflix.util.concurrent.ShutdownEnabledTimer" level="warn" additivity="false">
 	        <appender-ref ref="stdout" />
 	    </logger>

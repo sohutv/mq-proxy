@@ -59,7 +59,7 @@ public class MQController {
      */
     private void getRequestIdFromCookie(ConsumeParam param, HttpServletRequest request) {
         if (param.isUseCookie() && StringUtils.isEmpty(param.getRequestId())) {
-            param.setRequestId(WebUtil.getRequestIdFromCookie(request));
+            param.setRequestId(WebUtil.getRequestIdFromCookie(request, param.getClientName()));
         }
     }
 
@@ -69,7 +69,7 @@ public class MQController {
     private void saveRequestIdToCookie(ConsumeParam param, MQProxyResponse<?> mqProxyResponse, HttpServletResponse response) {
         if (param.isUseCookie() && mqProxyResponse.ok()) {
             FetchResult fetchResult = (FetchResult) mqProxyResponse.getResult();
-            WebUtil.setRequestIdToCookie(response, fetchResult.getRequestId());
+            WebUtil.setRequestIdToCookie(response, param.getClientName(), fetchResult.getRequestId());
         }
     }
 

@@ -1,6 +1,7 @@
 package com.sohu.tv.mq.proxy.test.rocketmq;
 
 import com.sohu.tv.mq.proxy.model.MQProxyResponse;
+import com.sohu.tv.mq.proxy.producer.web.param.TestParam;
 import com.sohu.tv.mq.proxy.test.model.FetchResult;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
@@ -20,17 +21,16 @@ public class HttpConsumer extends HttpMQ {
 
     protected String uri;
 
-    public HttpConsumer(RestTemplate restTemplate, String group, String topic) {
-        this(restTemplate, group, topic, false);
-    }
-
-    public HttpConsumer(RestTemplate restTemplate, String group, String topic, boolean supportCookie) {
-        super(restTemplate, group, topic);
-        this.supportCookie = supportCookie;
+    public HttpConsumer(RestTemplate restTemplate, TestParam testParam) {
+        super(restTemplate, testParam.getGroup(), testParam.getTopic());
+        this.supportCookie = testParam.isSupportCookie();
         if (supportCookie) {
             uri = "/mq/message?topic=" + topic + "&consumer=" + group;
         } else {
             uri = "/mq/message?topic=" + topic + "&consumer=" + group + "&requestId={requestId}";
+        }
+        if (testParam.isPop()) {
+            uri += "&pop=true";
         }
     }
 

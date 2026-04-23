@@ -27,6 +27,8 @@ public class FetchResult {
     // ack响应
     private MQProxyResponse ackInfo;
 
+    private boolean popRetryMsg;
+
     public int getMsgListSize() {
         return msgList == null ? 0 : msgList.size();
     }

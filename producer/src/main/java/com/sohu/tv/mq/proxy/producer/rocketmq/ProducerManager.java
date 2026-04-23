@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import redis.clients.jedis.exceptions.JedisDataException;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -155,7 +156,7 @@ public class ProducerManager {
                 return sendOrderIdMessage(param);
             }
             // 发送有序消息
-            if (param.isOrdered()) {
+            if (param.isRoundRobin()) {
                 return sendOrderMessage(param);
             }
             // 发送普通消息
@@ -178,7 +179,21 @@ public class ProducerManager {
             } else {
                 mqMessage.setRetryTimes(param.getAsyncRetryTimesIfSendFailed());
             }
+            addLiteTopics(mqMessage, param.getLiteTopics());
             return producer.send(mqMessage);
+        }
+
+        private void addLiteTopics(MQMessage mqMessage, String liteTopics) {
+            if (liteTopics == null) {
+                return;
+            }
+            String[] liteTopicArray = liteTopics.split(",");
+            for (String liteTopic : liteTopicArray) {
+                liteTopic = liteTopic.trim();
+                if (liteTopic.length() > 0) {
+                    mqMessage.addLiteTopic(liteTopic);
+                }
+            }
         }
 
         /**
@@ -199,6 +214,7 @@ public class ProducerManager {
         public Result<SendResult> sendOrderMessage(MessageParam param, Long orderArg) {
             MQMessage mqMessage = MQMessage.build(param.getMessage()).setKeys(param.getKeys())
                     .setClientHost(param.getClientIp()).setOrderArg(orderArg);
+            addLiteTopics(mqMessage, param.getLiteTopics());
             return producer.send(mqMessage);
         }
 

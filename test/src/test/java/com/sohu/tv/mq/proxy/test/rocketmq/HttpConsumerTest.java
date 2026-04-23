@@ -1,5 +1,6 @@
 package com.sohu.tv.mq.proxy.test.rocketmq;
 
+import com.sohu.tv.mq.proxy.producer.web.param.TestParam;
 import com.sohu.tv.mq.proxy.test.Application;
 import org.junit.Assert;
 import org.junit.Test;
@@ -26,7 +27,10 @@ public class HttpConsumerTest {
 
     @Test
     public void testConsume() throws InterruptedException {
-        HttpConsumer httpConsumer = new HttpConsumer(consumerRestTemplate, group, topic);
+        TestParam testParam = new TestParam();
+        testParam.setGroup(group);
+        testParam.setTopic(topic);
+        HttpConsumer httpConsumer = new HttpConsumer(consumerRestTemplate, testParam);
         for (int i = 0; i < 100; ++i) {
             long count = httpConsumer.run();
             System.out.println("count:" + count);
@@ -37,7 +41,11 @@ public class HttpConsumerTest {
 
     @Test
     public void testConsumeSupportCookie() throws InterruptedException {
-        HttpConsumer httpConsumer = new HttpConsumer(consumerRestTemplate, group, topic, true);
+        TestParam testParam = new TestParam();
+        testParam.setGroup(group);
+        testParam.setTopic(topic);
+        testParam.setSupportCookie(true);
+        HttpConsumer httpConsumer = new HttpConsumer(consumerRestTemplate, testParam);
         for (int i = 0; i < 100; ++i) {
             long count = httpConsumer.run();
             System.out.println("count:" + count);

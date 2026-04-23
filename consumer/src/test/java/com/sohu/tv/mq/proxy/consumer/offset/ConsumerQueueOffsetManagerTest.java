@@ -49,7 +49,7 @@ public class ConsumerQueueOffsetManagerTest {
 
     @Test
     public void testUpdateNewerMaxOffset() {
-        consumerManager.updateNewerMaxOffset(topic);
+        consumerManager.updateNewerMaxOffsetForTopic(topic);
     }
 
     @Test

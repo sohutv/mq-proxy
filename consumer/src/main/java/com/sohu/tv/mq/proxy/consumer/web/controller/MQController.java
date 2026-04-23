@@ -5,7 +5,7 @@ import com.sohu.tv.mq.proxy.consumer.model.FetchRequest;
 import com.sohu.tv.mq.proxy.consumer.model.FetchResult;
 import com.sohu.tv.mq.proxy.consumer.rocketmq.ConsumerManager;
 import com.sohu.tv.mq.proxy.consumer.rocketmq.ConsumerManager.ConsumerProxy;
-import com.sohu.tv.mq.proxy.consumer.rocketmq.MessageFetcher;
+import com.sohu.tv.mq.proxy.consumer.rocketmq.DefaultMessageFetcher;
 import com.sohu.tv.mq.proxy.consumer.web.param.ConsumeParam;
 import com.sohu.tv.mq.proxy.consumer.web.param.ConsumerConfigParam;
 import com.sohu.tv.mq.proxy.model.MQProxyResponse;
@@ -33,7 +33,7 @@ import javax.validation.Valid;
 public class MQController {
 
     @Autowired
-    private MessageFetcher messageFetcher;
+    private DefaultMessageFetcher messageFetcher;
 
     @Autowired
     private ConsumerManager consumerManager;
@@ -84,10 +84,7 @@ public class MQController {
     public MQProxyResponse<String> ack(@Valid ConsumeParam param, HttpServletRequest request) throws Exception {
         getRequestIdFromCookie(param, request);
         FetchRequest fetchRequest = FetchRequest.build(param);
-        // 获取消费代理
-        ConsumerProxy consumer = consumerManager.getConsumer(fetchRequest);
-        // offset ack
-        return consumer.offsetAck(fetchRequest);
+        return messageFetcher.commitAck(fetchRequest);
     }
 
     /**
@@ -129,6 +126,27 @@ public class MQController {
     @GetMapping("/broadcast/queue/offset")
     public MQProxyResponse<?> broadcastQueueOffset(@RequestParam("consumer") String consumer) throws Exception {
         return consumerManager.getConsumerQueueOffsetList(consumer);
+    }
+
+    /**
+     * 查询集群pop消费ack
+     */
+    @GetMapping("/clustering/pop/ack")
+    public MQProxyResponse<?> clusteringPopAckInfo(@RequestParam("consumer") String consumer,
+                                                   @RequestParam("page") int page,
+                                                   @RequestParam("pageSize") int pageSize) throws Exception {
+        return consumerManager.getPopAckInfo(consumer, null, page, pageSize);
+    }
+
+    /**
+     * 查询广播pop消费ack
+     */
+    @GetMapping("/broadcast/pop/ack")
+    public MQProxyResponse<?> broadcastPopAckInfo(@RequestParam("consumer") String consumer,
+                                                  @RequestParam("clientId") String clientId,
+                                                  @RequestParam("page") int page,
+                                                  @RequestParam("pageSize") int pageSize) throws Exception {
+        return consumerManager.getPopAckInfo(consumer, clientId, page, pageSize);
     }
 
     /**

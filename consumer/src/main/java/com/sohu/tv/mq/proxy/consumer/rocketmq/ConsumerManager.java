@@ -1,22 +1,26 @@
 package com.sohu.tv.mq.proxy.consumer.rocketmq;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.RemovalCause;
+import com.google.common.cache.RemovalNotification;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.sohu.index.tv.mq.common.PullResponse;
-import com.sohu.tv.mq.proxy.consumer.model.ConsumerQueueOffset;
-import com.sohu.tv.mq.proxy.consumer.model.ConsumerQueueOffsetResult;
-import com.sohu.tv.mq.proxy.consumer.model.FetchRequest;
-import com.sohu.tv.mq.proxy.consumer.model.TopicConsumer;
+import com.sohu.tv.mq.proxy.consumer.model.*;
 import com.sohu.tv.mq.proxy.consumer.offset.ConsumerQueueOffsetManager;
 import com.sohu.tv.mq.proxy.consumer.offset.EmptyOffsetStore;
 import com.sohu.tv.mq.proxy.model.MQException;
 import com.sohu.tv.mq.proxy.model.MQProxyResponse;
 import com.sohu.tv.mq.proxy.store.IRedis;
+import com.sohu.tv.mq.rocketmq.RocketMQLmqPullConsumer;
 import com.sohu.tv.mq.rocketmq.RocketMQPullConsumer;
+import com.sohu.tv.mq.util.CommonUtil;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.rocketmq.client.exception.MQBrokerException;
 import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.exception.RemotingException;
@@ -26,6 +30,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import javax.annotation.PostConstruct;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -51,7 +57,13 @@ public class ConsumerManager {
     @Value("${mqcloud.domain}")
     private String mqcloudDomain;
 
+    @Value("${lmq.consumer.expireAfterAccessAtMinute}")
+    private int lmqConsumerExpireAfterAccessAtMinute;
+
     private ConcurrentMap<String, ConsumerProxy> consumerMap = new ConcurrentHashMap<>();
+
+    // 轻量级消费者缓存
+    private Cache<String, ConsumerProxy> liteConsumerCache;
 
     // 消息队列变更补偿线程池
     private ScheduledExecutorService messageQueueChangedExecutorService;
@@ -62,7 +74,16 @@ public class ConsumerManager {
     // topic级别较新的最大偏移量更新线程池
     private ScheduledExecutorService topicNewerMaxOffsetUpdateExecutorService;
 
-    public ConsumerManager() {
+    // 轻量级消费者缓存清理线程池
+    private ScheduledExecutorService liteConsumerCacheCleanUpExecutorService;
+
+    @PostConstruct
+    public void init() {
+        liteConsumerCache = CacheBuilder.newBuilder()
+                .expireAfterWrite(Duration.ofMinutes(lmqConsumerExpireAfterAccessAtMinute))
+                .maximumSize(100000)
+                .removalListener(this::removeLiteConsumerCache)
+                .build();
         messageQueueChangedExecutorService = Executors.newSingleThreadScheduledExecutor(
                 new ThreadFactoryBuilder().setNameFormat("consumerManagerThread").setDaemon(true).build());
 
@@ -75,6 +96,9 @@ public class ConsumerManager {
 
         topicNewerMaxOffsetUpdateExecutorService = Executors.newSingleThreadScheduledExecutor(
                 new ThreadFactoryBuilder().setNameFormat("topicNewerMaxOffsetUpdateThread").setDaemon(true).build());
+
+        liteConsumerCacheCleanUpExecutorService = Executors.newSingleThreadScheduledExecutor(
+                new ThreadFactoryBuilder().setNameFormat("liteConsumerCacheCleanUpThread").setDaemon(true).build());
         start();
     }
 
@@ -141,7 +165,10 @@ public class ConsumerManager {
      * @param fetchRequest
      * @return
      */
-    public ConsumerProxy getConsumer(FetchRequest fetchRequest) {
+    public ConsumerProxy getConsumer(FetchRequest fetchRequest) throws ExecutionException {
+        if (fetchRequest.getLiteTopic() != null) {
+            return getLiteConsumer(fetchRequest);
+        }
         ConsumerProxy consumerProxy = consumerMap.get(fetchRequest.getConsumer());
         if (consumerProxy == null) {
             throw new MQException("consumer:" + fetchRequest.getConsumer() + " haven't registered");
@@ -154,35 +181,72 @@ public class ConsumerManager {
             if (fetchRequest.getClientId() == null) {
                 throw new MQException("consumer:" + fetchRequest.getConsumer() + " clientId is null");
             }
-            // 注册clientId
-            registerClientId(consumerProxy, fetchRequest.getClientId());
+            consumerProxy.registerForBroadcasting(fetchRequest.getClientId());
         } else if (fetchRequest.getClientId() != null) {
             throw new MQException("consumer:" + fetchRequest.getConsumer() + " no need clientId");
         }
         return consumerProxy;
     }
 
-    public ConsumerProxy getConsumer(String consumer) {
-        return consumerMap.get(consumer);
+    public ConsumerProxy getLiteConsumer(FetchRequest fetchRequest) throws ExecutionException {
+        String consumer = CommonUtil.buildLmqConsumer(fetchRequest.getConsumer());
+        ConsumerProxy consumerProxy = liteConsumerCache.get(consumer, () -> buildLiteConsumerProxy(fetchRequest));
+        if (consumerProxy.isBroadcasting()) {
+            consumerProxy.registerForBroadcasting(fetchRequest.getClientId());
+        }
+        // 延续过期时间
+        liteConsumerCache.put(consumer, consumerProxy);
+        return consumerProxy;
     }
 
     /**
-     * 注册clientId
-     *
-     * @param consumerProxy
-     * @param clientId
+     * 构建轻量级消费者代理
      */
-    private void registerClientId(ConsumerProxy consumerProxy, String clientId) {
-        // 注册clientId
-        if (consumerProxy.registerClientId(clientId)
-                && !consumerProxy.getQueueOffsetManager().isQueueOffsetExist(clientId)) { // 首次注册更新队列
-            try {
-                consumerProxy.getQueueOffsetManager().updateQueueOffset(clientId,
-                        consumerProxy.fetchSubscribeMessageQueues());
-            } catch (MQClientException e) {
-                log.warn("{}:{} updateQueueOffset error", consumerProxy.getGroup(), clientId);
-            }
+    private ConsumerProxy buildLiteConsumerProxy(FetchRequest fetchRequest) {
+        // 创建PullConsumer
+        RocketMQPullConsumer consumer = new RocketMQLmqPullConsumer(fetchRequest.getConsumer(),
+                fetchRequest.getTopic(), fetchRequest.getLiteTopic());
+        consumer.setMqCloudDomain(mqcloudDomain);
+        // 置空偏移量存储
+        consumer.getConsumer().setOffsetStore(new EmptyOffsetStore());
+        consumer.getConsumer().setEnableStreamRequestType(false);
+        // 注册队列变更监听
+        MessageModel messageModel = MessageModel.CLUSTERING;
+        if (fetchRequest.getClientId() != null) {
+            messageModel = MessageModel.BROADCASTING;
         }
+        ConsumerProxy consumerProxy = new ConsumerProxy(consumer, messageModel);
+        ConsumerQueueOffsetManager manager = new ConsumerQueueOffsetManager(consumerProxy, redis);
+        consumer.getConsumer().setMessageQueueListener(manager);
+        consumer.start();
+        if (consumer.isRunning()) {
+            log.info("lite consumer:{} register ok", fetchRequest);
+        }
+        consumerProxy.updateQueueOffsetForClustering();
+        return consumerProxy;
+    }
+
+    private void removeLiteConsumerCache(RemovalNotification<String, ConsumerProxy> notification) {
+        RemovalCause removalCause = notification.getCause();
+        if (removalCause == RemovalCause.REPLACED) {
+            return;
+        }
+        String consumer = notification.getKey();
+        ConsumerProxy consumerProxy = notification.getValue();
+        log.info("lite consumer:{} removed, cause:{}", consumer, removalCause);
+        if (consumerProxy == null) {
+            return;
+        }
+        consumerProxy.getQueueOffsetManager().deleteConsumerQueueOffset();
+        consumerProxy.shutdown();
+        log.info("lite consumer:{} shutdown ok", consumer);
+    }
+
+    public ConsumerProxy getConsumer(String consumer) {
+        if (MixAll.isLmq(consumer)) {
+            return liteConsumerCache.getIfPresent(consumer);
+        }
+        return consumerMap.get(consumer);
     }
 
     /**
@@ -192,7 +256,7 @@ public class ConsumerManager {
      * @return
      */
     public MQProxyResponse<?> getConsumerQueueOffsetList(String consumer) {
-        ConsumerProxy consumerProxy = consumerMap.get(consumer);
+        ConsumerProxy consumerProxy = getConsumer(consumer);
         if (consumerProxy == null) {
             log.error("consumer:{} haven't registered", consumer);
             return MQProxyResponse.buildErrorResponse("consumer:" + consumer + " haven't registered");
@@ -201,6 +265,20 @@ public class ConsumerManager {
             return MQProxyResponse.buildOKResponse(consumerProxy.getQueueOffsetManager().getBroadcastQueueOffsets());
         }
         return MQProxyResponse.buildOKResponse(consumerProxy.getQueueOffsetManager().getClusteringQueueOffsets());
+    }
+
+    /**
+     * 获取消费偏移量
+     */
+    public MQProxyResponse<?> getPopAckInfo(String consumer, String clientId, int page, int pageSize) {
+        ConsumerProxy consumerProxy = getConsumer(consumer);
+        if (consumerProxy == null) {
+            log.error("consumer:{} haven't registered", consumer);
+            return MQProxyResponse.buildErrorResponse("consumer:" + consumer + " haven't registered");
+        }
+        int start = (page - 1) * pageSize;
+        int end = start + pageSize - 1;
+        return MQProxyResponse.buildOKResponse(consumerProxy.getQueueOffsetManager().getPopAckInfo(clientId, start, end));
     }
 
     /**
@@ -219,27 +297,39 @@ public class ConsumerManager {
         // 启动topic级别较新的最大偏移量更新任务
         topicNewerMaxOffsetUpdateExecutorService.scheduleAtFixedRate(() -> {
             try {
-                updateNewerMaxOffset();
+                updateNewerMaxOffsetForConfigTopic();
             } catch (Throwable e) {
-                log.error("updateNewerMaxOffset error", e);
+                log.error("updateNewerMaxOffsetForConfigTopic error", e);
             }
         }, 5, 30, TimeUnit.MINUTES);
+
+        // 启动轻量级消费者缓存清理任务
+        liteConsumerCacheCleanUpExecutorService.scheduleAtFixedRate(() -> {
+            try {
+                liteConsumerCache.cleanUp();
+            } catch (Throwable e) {
+                log.error("liteConsumerCache cleanUp error", e);
+            }
+        }, 10, 10, TimeUnit.MINUTES);
     }
 
     /**
      * 队列变更补偿定时任务
      */
     public void messageQueueChanged() {
-        consumerMap.values().forEach(consumerProxy -> {
-            try {
-                consumerProxy.getQueueOffsetManager().messageQueueChanged(consumerProxy.getTopic(),
-                        consumerProxy.fetchSubscribeMessageQueues(), null);
-            } catch (MQClientException e) {
-                log.error("topic:{} consumer:{} fetchSubscribeMessageQueues error",
-                        consumerProxy.getTopic(),
-                        consumerProxy.getGroup(), e);
-            }
-        });
+        consumerMap.values().forEach(this::messageQueueChanged);
+        liteConsumerCache.asMap().values().forEach(this::messageQueueChanged);
+    }
+
+    public void messageQueueChanged(ConsumerProxy consumerProxy) {
+        try {
+            consumerProxy.getQueueOffsetManager().messageQueueChanged(consumerProxy.getTopic(),
+                    consumerProxy.fetchSubscribeMessageQueues(), null);
+        } catch (MQClientException e) {
+            log.error("topic:{} consumer:{} fetchSubscribeMessageQueues error",
+                    consumerProxy.getTopic(),
+                    consumerProxy.getGroup(), e);
+        }
     }
 
     /**
@@ -249,7 +339,13 @@ public class ConsumerManager {
         try {
             newerMaxOffsetUpdateExecutorService.execute(() -> {
                 try {
-                    consumerProxy.updateNewerMaxOffset(consumerQueueOffsets, consumerMap.values());
+                    Collection<ConsumerProxy> consumers = null;
+                    if (MixAll.isLmq(consumerProxy.getTopic())) {
+                        consumers = liteConsumerCache.asMap().values();
+                    } else {
+                        consumers = consumerMap.values();
+                    }
+                    consumerProxy.updateNewerMaxOffset(consumerQueueOffsets, consumers);
                 } catch (Throwable e) {
                     log.error("updateNewerMaxOffset:{} error", consumerProxy.getGroup(), e);
                 }
@@ -264,7 +360,7 @@ public class ConsumerManager {
     /**
      * 更新较新的最大偏移量
      */
-    public void updateNewerMaxOffset() {
+    public void updateNewerMaxOffsetForConfigTopic() {
         String value = redis.get(SCHEDULE_UPDATE_NEWER_MAX_OFFSET_TOPIC);
         if (StringUtils.isEmpty(value)) {
             return;
@@ -272,23 +368,29 @@ public class ConsumerManager {
         long start = System.currentTimeMillis();
         String[] topics = value.split(",");
         for (String topic : topics) {
-            updateNewerMaxOffset(topic);
+            updateNewerMaxOffsetForTopic(topic);
         }
-        log.info("updateNewerMaxOffset size:{} cost:{}", topics.length, System.currentTimeMillis() - start);
+        log.info("updateNewerMaxOffsetForConfigTopic size:{} cost:{}", topics.length, System.currentTimeMillis() - start);
     }
 
     /**
      * 更新topic较新的最大偏移量
      */
-    public void updateNewerMaxOffset(String topic) {
+    public void updateNewerMaxOffsetForTopic(String topic) {
         List<ConsumerProxy> consumerProxies = new ArrayList<>();
-        for(Entry<String, ConsumerProxy> entry : consumerMap.entrySet()) {
-            if(entry.getValue().getTopic().equals(topic)) {
+        Set<Entry<String, ConsumerProxy>> entrySet = null;
+        if (MixAll.isLmq(topic)) {
+            entrySet = liteConsumerCache.asMap().entrySet();
+        } else {
+            entrySet = consumerMap.entrySet();
+        }
+        for (Entry<String, ConsumerProxy> entry : entrySet) {
+            if (entry.getValue().getTopic().equals(topic)) {
                 consumerProxies.add(entry.getValue());
             }
         }
         if (consumerProxies.isEmpty()) {
-            log.warn("updateNewerMaxOffset:{} consumer is empty", topic);
+            log.warn("updateNewerMaxOffsetForTopic:{} consumer is empty", topic);
             return;
         }
         consumerProxies.get(0).updateNewerMaxOffset(consumerProxies);
@@ -302,6 +404,7 @@ public class ConsumerManager {
         private RocketMQPullConsumer consumer;
         // 广播模式有多个clientId
         private ConcurrentMap<String, ClientId> clientIdMap;
+        private boolean pop;
 
         public ConsumerProxy(RocketMQPullConsumer pullConsumer, MessageModel messageModel) {
             this.consumer = pullConsumer;
@@ -311,8 +414,35 @@ public class ConsumerManager {
             }
         }
 
+        public void registerForBroadcasting(String clientId) {
+            // 注册clientId
+            if (isBroadcasting() && registerClientId(clientId)) {
+                // 首次注册更新队列
+                updateQueueOffsetIfNeeded(clientId);
+            }
+        }
+
+        public void updateQueueOffsetForClustering() {
+            if (isBroadcasting()) {
+                return;
+            }
+            updateQueueOffsetIfNeeded(null);
+        }
+
+        public void updateQueueOffsetIfNeeded(String clientId) {
+            boolean queueOffsetExist = getQueueOffsetManager().isQueueOffsetExist(clientId);
+            if (queueOffsetExist) {
+                return;
+            }
+            try {
+                getQueueOffsetManager().updateQueueOffset(clientId, fetchSubscribeMessageQueues(), true);
+            } catch (MQClientException e) {
+                log.warn("{}:{} updateQueueOffset error", getGroup(), clientId);
+            }
+        }
+
         public Set<MessageQueue> fetchSubscribeMessageQueues() throws MQClientException {
-            return consumer.getConsumer().fetchSubscribeMessageQueues(consumer.getTopic());
+            return consumer.fetchSubscribeMessageQueues();
         }
 
         public long maxOffset(MessageQueue mq) throws MQClientException {
@@ -340,12 +470,26 @@ public class ConsumerManager {
             return false;
         }
 
-        public MQProxyResponse<String> offsetAck(FetchRequest fetchRequest) {
+        public MQProxyResponse<String> commitPopAck(FetchRequest fetchRequest) {
+            return getQueueOffsetManager().commitPopAck(fetchRequest);
+        }
+
+        public MQProxyResponse<String> commitAck(FetchRequest fetchRequest) {
             return getQueueOffsetManager().updateCommittedOffset(fetchRequest);
+        }
+
+        public MQProxyResponse<String> saveProcessingPopAck(FetchRequest fetchRequest) {
+            fetchRequest.setConsumeTimeout(getConsumeTimeoutInMillis());
+            return getQueueOffsetManager().saveProcessingPopAck(fetchRequest);
         }
 
         public MQProxyResponse<String> unlock(FetchRequest fetchRequest) {
             return getQueueOffsetManager().unlock(fetchRequest);
+        }
+
+        public FetchRequest getTimeoutPopAckInfo(FetchRequest fetchRequest) {
+            fetchRequest.setConsumeTimeout(getConsumeTimeoutInMillis());
+            return getQueueOffsetManager().getTimeoutPopAck(fetchRequest);
         }
 
         /**
@@ -386,6 +530,11 @@ public class ConsumerManager {
         public PullResponse pull(MessageQueue mq, long offset, String clientIp)
                 throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
             return consumer.pull(mq, offset, clientIp);
+        }
+
+        public PullResponse pull(MessageQueue mq, long offset, int maxNums, String clientIp)
+                throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+            return consumer.pull(mq, offset, maxNums, clientIp);
         }
 
         public MessageExt viewMessage(String topic, String uniqKey) throws RemotingException, MQBrokerException,
@@ -461,11 +610,11 @@ public class ConsumerManager {
             consumer.setPause(pause);
         }
 
-        public boolean isRateLimierEnabled() {
+        public boolean isRateLimiterEnabled() {
             return consumer.getRateLimiter().isEnabled();
         }
 
-        public void setRateLimierEnabled(boolean enabled) {
+        public void setRateLimiterEnabled(boolean enabled) {
             consumer.getRateLimiter().setEnabled(enabled);
         }
 
@@ -477,11 +626,12 @@ public class ConsumerManager {
             consumer.getRateLimiter().setRate(limitRate);
         }
 
-        public Object getQueueOffsets() {
-            if (isBroadcasting()) {
-                return getQueueOffsetManager().getBroadcastQueueOffsets();
-            }
-            return getQueueOffsetManager().getClusteringQueueOffsets();
+        public boolean isPop() {
+            return pop;
+        }
+
+        public void setPop(boolean pop) {
+            this.pop = pop;
         }
 
         public RocketMQPullConsumer consumer() {

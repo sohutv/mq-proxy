@@ -36,7 +36,7 @@ public class HttpMQManager {
     }
 
     public void runClusteringConsumer(TestParam testParam) {
-        HttpMQ httpMQ = new HttpConsumer(consumerRestTemplate, testParam.getGroup(), testParam.getTopic());
+        HttpMQ httpMQ = new HttpConsumer(consumerRestTemplate, testParam);
         if (testParam.getInterval() != null) {
             httpMQ.setIntervalInMillis(testParam.getInterval());
         }
@@ -44,8 +44,7 @@ public class HttpMQManager {
     }
 
     public void runBroadcastingConsumer(TestParam testParam) {
-        HttpMQ httpMQ = new HttpBroadcastingConsumer(consumerRestTemplate, testParam.getGroup(), testParam.getTopic(),
-                testParam.getClientId());
+        HttpMQ httpMQ = new HttpBroadcastingConsumer(consumerRestTemplate, testParam);
         if (testParam.getInterval() != null) {
             httpMQ.setIntervalInMillis(testParam.getInterval());
         }

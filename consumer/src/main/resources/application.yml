@@ -50,3 +50,6 @@ mqcloud:
   domain: 127.0.0.1:8080
 cipher:
   key: DJs32jslkdghDSDf
+lmq:
+  consumer:
+    expireAfterAccessAtMinute: 5

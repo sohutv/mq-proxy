@@ -1,13 +1,12 @@
 package com.sohu.tv.mq.proxy.store;
 
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisCluster;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.Protocol;
+import redis.clients.jedis.*;
 import redis.clients.jedis.params.SetParams;
+import redis.clients.jedis.params.ZAddParams;
 import redis.clients.jedis.util.Pool;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -103,6 +102,26 @@ public class PooledRedis implements IRedis {
     @Override
     public String set(String key, String value) {
         return execute(jedis -> jedis.set(key, value));
+    }
+
+    @Override
+    public Long zadd(String key, double score, String member) {
+        return execute(jedis -> jedis.zadd(key, score, member));
+    }
+
+    @Override
+    public Long zadd(String key, double score, String member, ZAddParams params) {
+        return execute(jedis -> jedis.zadd(key, score, member, params));
+    }
+
+    @Override
+    public Long zrem(String key, String... members) {
+        return execute(jedis -> jedis.zrem(key, members));
+    }
+
+    @Override
+    public Set<Tuple> zrangeWithScores(String key, long start, long end) {
+        return execute(jedis -> jedis.zrangeWithScores(key, start, end));
     }
 
     private <R> R execute(Function<Jedis, R> function) {

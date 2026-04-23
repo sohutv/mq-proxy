@@ -3,7 +3,9 @@ package com.sohu.tv.mq.proxy.store;
 import redis.clients.jedis.HostAndPort;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisCluster;
+import redis.clients.jedis.Tuple;
 import redis.clients.jedis.params.SetParams;
+import redis.clients.jedis.params.ZAddParams;
 import redis.clients.jedis.util.Pool;
 
 import java.util.HashSet;
@@ -104,5 +106,22 @@ public class ClusteredRedis implements IRedis {
     @Override
     public String set(String key, String value) {
         return jedisCluster.set(key, value);
+    }
+
+    public Long zadd(String key, double score, String member) {
+        return jedisCluster.zadd(key, score, member);
+    }
+
+    @Override
+    public Long zadd(String key, double score, String member, ZAddParams params) {
+        return jedisCluster.zadd(key, score, member, params);
+    }
+
+    public Long zrem(String key, String... members) {
+        return jedisCluster.zrem(key, members);
+    }
+
+    public Set<Tuple> zrangeWithScores(String key, long start, long end) {
+        return jedisCluster.zrangeWithScores(key, start, end);
     }
 }

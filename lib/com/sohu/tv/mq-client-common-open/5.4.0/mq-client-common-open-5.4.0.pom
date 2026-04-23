@@ -3,7 +3,7 @@
   <parent>
     <artifactId>mq</artifactId>
     <groupId>com.sohu.tv</groupId>
-    <version>5.3.1-SNAPSHOT</version>
+    <version>5.4.0</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <artifactId>mq-client-common-open</artifactId>
@@ -66,7 +66,7 @@
     <dependency>
       <groupId>org.apache.rocketmq</groupId>
       <artifactId>rocketmq-client</artifactId>
-      <version>5.3.1-sohu-02</version>
+      <version>5.4.0-sohu-01</version>
       <scope>compile</scope>
       <exclusions>
         <exclusion>

@@ -21,3 +21,4 @@ pom.xml.versionsBackup
 # ignore idea files
 .idea
 *.iml
+.flattened-pom.xml

@@ -7,6 +7,7 @@ import com.sohu.tv.mq.proxy.model.MQException;
 import com.sohu.tv.mq.proxy.store.IRedis;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.common.MixAll;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -218,6 +219,9 @@ public class ConsumerConfigManager implements ApplicationRunner {
             ConsumerProxy consumerProxy = consumerManager.getConsumer(keys[0]);
             if (consumerProxy == null) {
                 log.warn("consumer config:{} no consumer", entry.getKey());
+                if (MixAll.isLmq(keys[0])) {
+                    deleteConsumerConfig(entry.getKey());
+                }
                 continue;
             }
             String value = entry.getValue();
@@ -257,10 +261,10 @@ public class ConsumerConfigManager implements ApplicationRunner {
                     }
                     break;
                 case RATELIMIT_ENABLED_FIELD:
-                    boolean rateLimitEnabled = consumerProxy.isRateLimierEnabled();
+                    boolean rateLimitEnabled = consumerProxy.isRateLimiterEnabled();
                     boolean newRateLimitEnabled = "1".equals(value);
                     if (rateLimitEnabled != newRateLimitEnabled) {
-                        consumerProxy.setRateLimierEnabled(newRateLimitEnabled);
+                        consumerProxy.setRateLimiterEnabled(newRateLimitEnabled);
                         log.info("{} rateLimitEnabled {}->{}", consumerProxy.getGroup(), rateLimitEnabled,
                                 newRateLimitEnabled);
                     }
@@ -275,6 +279,11 @@ public class ConsumerConfigManager implements ApplicationRunner {
                     break;
             }
         }
+    }
+
+    public void deleteConsumerConfig(String key) {
+        log.info("delete consumer config:{}", key);
+        redis.hdel(CONSUMER_CONFIG_KEY, key);
     }
 
     /**

@@ -34,6 +34,24 @@ public class FetchRequest {
     private boolean forceAck;
     // 客户端ip
     private String clientIp;
+    // 轻量级topic
+    private String liteTopic;
+
+    private Integer maxPullSize;
+    private Long consumeTimeout;
+    private Long pullTimeout;
+
+    private boolean pop;
+
+    /**
+     * 构建实例
+     */
+    public static FetchRequest build(String requestId) {
+        FetchRequest fetchRequest = new FetchRequest();
+        fetchRequest.setRequestId(requestId);
+        fetchRequest.decode();
+        return fetchRequest;
+    }
 
     /**
      * 构建实例
@@ -50,6 +68,7 @@ public class FetchRequest {
         fetchRequest.setTopic(param.getTopic());
         fetchRequest.setConsumer(param.getConsumer());
         fetchRequest.setRequestId(param.getRequestId());
+        fetchRequest.setLiteTopic(param.getLiteTopic());
         if (StringUtils.isNotBlank(param.getClientId())) {
             fetchRequest.setClientId(param.getClientId());
         }
@@ -58,6 +77,10 @@ public class FetchRequest {
         } else {
             fetchRequest.setClientIp(param.getClientIp());
         }
+        fetchRequest.setMaxPullSize(param.getMaxPullSize());
+        fetchRequest.setConsumeTimeout(param.getConsumeTimeout());
+        fetchRequest.setPullTimeout(param.getPullTimeout());
+        fetchRequest.setPop(param.isPop());
         fetchRequest.decode();
         return fetchRequest;
     }
@@ -122,5 +145,9 @@ public class FetchRequest {
 
     public String getAckInfo() {
         return brokerName + "-" + queueId + ":" + offset + "," + nextOffset + "," + lockTime + "," + forceAck;
+    }
+
+    public int getPullSize() {
+        return (int) (nextOffset - offset);
     }
 }

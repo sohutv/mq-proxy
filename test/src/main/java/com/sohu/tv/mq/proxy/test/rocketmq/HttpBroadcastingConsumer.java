@@ -1,5 +1,6 @@
 package com.sohu.tv.mq.proxy.test.rocketmq;
 
+import com.sohu.tv.mq.proxy.producer.web.param.TestParam;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Objects;
@@ -12,11 +13,10 @@ public class HttpBroadcastingConsumer extends HttpConsumer {
 
     private String clientId;
 
-    public HttpBroadcastingConsumer(RestTemplate restTemplate, String group, String topic, String clientId) {
-        super(restTemplate, group, topic);
-        this.clientId = clientId;
-        uri = "/mq/message?topic=" + topic + "&consumer=" + group + "&clientId=" + clientId +
-                "&requestId={requestId}";
+    public HttpBroadcastingConsumer(RestTemplate restTemplate, TestParam testParam) {
+        super(restTemplate, testParam);
+        this.clientId = testParam.getClientId();
+        uri += "&clientId=" + clientId;
     }
 
     @Override

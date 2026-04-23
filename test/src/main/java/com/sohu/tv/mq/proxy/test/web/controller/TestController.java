@@ -55,34 +55,24 @@ public class TestController {
         return MQProxyResponse.buildOKResponse();
     }
 
-    @GetMapping("/produce/auto")
-    public MQProxyResponse<?> produceAuto() throws Exception {
-        TestParam produceTestParam = new TestParam();
-        produceTestParam.setTopic("mqcloud-http-test-topic");
-        produceTestParam.setGroup("mqcloud-http-test-topic-producer");
-        produceTestParam.setInterval(1000);
-        httpMQManager.runProducer(produceTestParam);
+    @GetMapping("/auto")
+    public MQProxyResponse<?> produceAuto(TestParam testParam) throws Exception {
+        testParam.setTopic("mqcloud-http-test-topic");
+        testParam.setGroup("mqcloud-http-test-topic-producer");
+        testParam.setInterval(100);
+        httpMQManager.runProducer(testParam);
 
-        TestParam clusteringConsumeTestParam = new TestParam();
-        clusteringConsumeTestParam.setTopic("mqcloud-http-test-topic");
-        clusteringConsumeTestParam.setGroup("clustering-mqcloud-http-consumer");
-        clusteringConsumeTestParam.setInterval(1000);
-        httpMQManager.runClusteringConsumer(clusteringConsumeTestParam);
-        httpMQManager.runClusteringConsumer(clusteringConsumeTestParam);
+        testParam.setGroup("clustering-mqcloud-http-consumer");
+        testParam.setInterval(1000);
+        httpMQManager.runClusteringConsumer(testParam);
+        httpMQManager.runClusteringConsumer(testParam);
 
-        TestParam broadcastConsumeTestParam = new TestParam();
-        broadcastConsumeTestParam.setTopic("mqcloud-http-test-topic");
-        broadcastConsumeTestParam.setGroup("broadcast-mqcloud-http-consumer");
-        broadcastConsumeTestParam.setClientId("127.0.0.1");
-        broadcastConsumeTestParam.setInterval(1000);
-        httpMQManager.runBroadcastingConsumer(broadcastConsumeTestParam);
+        testParam.setGroup("broadcast-mqcloud-http-consumer");
+        testParam.setClientId("127.0.0.1");
+        httpMQManager.runBroadcastingConsumer(testParam);
 
-        TestParam broadcastConsumeTestParam2 = new TestParam();
-        broadcastConsumeTestParam2.setTopic("mqcloud-http-test-topic");
-        broadcastConsumeTestParam2.setGroup("broadcast-mqcloud-http-consumer");
-        broadcastConsumeTestParam2.setClientId("127.0.0.2");
-        broadcastConsumeTestParam2.setInterval(1000);
-        httpMQManager.runBroadcastingConsumer(broadcastConsumeTestParam2);
+        testParam.setClientId("127.0.0.2");
+        httpMQManager.runBroadcastingConsumer(testParam);
         return MQProxyResponse.buildOKResponse();
     }
 

@@ -22,4 +22,8 @@ public class TestParam {
 
     // 运行间隔 ms
     private Integer interval;
+
+    private boolean supportCookie;
+
+    private boolean pop;
 }

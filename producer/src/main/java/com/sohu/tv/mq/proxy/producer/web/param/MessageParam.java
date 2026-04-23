@@ -41,9 +41,14 @@ public class MessageParam {
     private String orderId;
 
     // 是否顺序轮训发送
+    private boolean roundRobin;
+    @Deprecated
     private boolean ordered;
 
     private String clientIp;
+
+    // 轻量topic列表，逗号分隔
+    private String liteTopics;
 
     public boolean isOrderIdEmpty() {
         if (orderId == null) {

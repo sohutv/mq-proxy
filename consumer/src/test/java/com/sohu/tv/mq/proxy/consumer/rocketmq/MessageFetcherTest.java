@@ -30,7 +30,7 @@ public class MessageFetcherTest {
     String consumerBroadcast = "broadcast-mqcloud-http-consumer";
 
     @Autowired
-    MessageFetcher messageFetcher;
+    PullMessageFetcher messageFetcher;
 
     @Autowired
     private ConsumerManager consumerManager;

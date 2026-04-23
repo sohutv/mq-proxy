@@ -1,3 +1,6 @@
 spring:
   application:
     name: sohu.mq-proxy-consumer.online
+lmq:
+  consumer:
+    expireAfterAccessAtMinute: 720

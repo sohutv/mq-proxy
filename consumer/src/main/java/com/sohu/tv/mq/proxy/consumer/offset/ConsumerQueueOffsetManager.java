@@ -4,20 +4,25 @@ import com.sohu.index.tv.mq.common.PullResponse;
 import com.sohu.tv.mq.proxy.consumer.model.ConsumerQueueOffset;
 import com.sohu.tv.mq.proxy.consumer.model.ConsumerQueueOffsetResult;
 import com.sohu.tv.mq.proxy.consumer.model.FetchRequest;
+import com.sohu.tv.mq.proxy.consumer.model.PopAckInfo;
 import com.sohu.tv.mq.proxy.consumer.rocketmq.ConsumerManager.ClientId;
 import com.sohu.tv.mq.proxy.consumer.rocketmq.ConsumerManager.ConsumerProxy;
 import com.sohu.tv.mq.proxy.model.MQProxyResponse;
 import com.sohu.tv.mq.proxy.store.IRedis;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.rocketmq.client.consumer.MessageQueueListener;
 import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.common.Pair;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.protocol.admin.TopicOffset;
 import org.apache.rocketmq.remoting.protocol.admin.TopicStatsTable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import redis.clients.jedis.Tuple;
 import redis.clients.jedis.params.SetParams;
+import redis.clients.jedis.params.ZAddParams;
 
 import java.util.*;
 import java.util.Map.Entry;
@@ -53,7 +58,7 @@ public class ConsumerQueueOffsetManager implements MessageQueueListener {
     // 较新的最大偏移量更新锁最小过期时间
     public static final int MIN_NEWER_MAX_OFFSET_LOCK_EXPIRE = 3;
     // 广播模式客户端过期
-    private long broadcastClientExpire = 10 * 60 * 1000L;
+    private long broadcastClientExpire = 24 * 3600 * 1000L;
 
     private Logger log;
 
@@ -240,6 +245,10 @@ public class ConsumerQueueOffsetManager implements MessageQueueListener {
         return redis.exists(key);
     }
 
+    public boolean updateQueueOffset(String clientId, Set<MessageQueue> mqAll) {
+        return updateQueueOffset(clientId, mqAll, false);
+    }
+
     /**
      * 更新队列偏移量
      *
@@ -247,9 +256,9 @@ public class ConsumerQueueOffsetManager implements MessageQueueListener {
      * @param mqAll
      * @return
      */
-    public boolean updateQueueOffset(String clientId, Set<MessageQueue> mqAll) {
+    public boolean updateQueueOffset(String clientId, Set<MessageQueue> mqAll, boolean forceUpdate) {
         // 加锁，保障锁定时间内只处理一次
-        if (!lockQueueOffset(clientId)) {
+        if (!forceUpdate && !lockQueueOffset(clientId)) {
             log.warn("lock {} failed, maybe locked by other app", clientId);
             return false;
         }
@@ -665,7 +674,15 @@ public class ConsumerQueueOffsetManager implements MessageQueueListener {
             // 遍历topicStatsTable，判断是否有更新
             for (Entry<MessageQueue, TopicOffset> entry : updatedOffset.getOffsetTable().entrySet()) {
                 ConsumerQueueOffset prevOffset = allMQMap.get(entry.getKey());
-                if (prevOffset == null || entry.getValue().getMaxOffset() > prevOffset.getMaxOffset()) {
+                long maxOffset = entry.getValue().getMaxOffset();
+                if (prevOffset == null || maxOffset > prevOffset.getMaxOffset()) {
+                    return updatedOffset;
+                }
+                // 之前的较新最大偏移量比当前的最大偏移量大太多，说明broker偏移量可能有截断，需要更新
+                boolean prevNewerMaxOffsetInvalid = prevOffset.getNewerMaxOffset() - maxOffset >= 100;
+                if (prevNewerMaxOffsetInvalid) {
+                    log.warn("prev newerMaxOffset:{} is invalid for mq:{}, maybe broker offset truncated, update newerMaxOffset to:{}",
+                            prevOffset.getNewerMaxOffset(), entry.getKey(), maxOffset);
                     return updatedOffset;
                 }
             }
@@ -788,5 +805,165 @@ public class ConsumerQueueOffsetManager implements MessageQueueListener {
             return MAX_NEWER_MAX_OFFSET_LOCK_EXPIRE;
         }
         return no;
+    }
+
+    public void deleteConsumerQueueOffset() {
+        if (consumerProxy.isBroadcasting()) {
+            for (String clientId : consumerProxy.getClientIdMap().keySet()) {
+                String key = toKey(clientId);
+                log.info("deleteConsumerQueueOffset:{}", key);
+                redis.del(key);
+            }
+            return;
+        }
+        String key = toKey(null);
+        log.info("deleteConsumerQueueOffset:{}", key);
+        redis.del(key);
+    }
+
+    public List<PopAckInfo> getPopAckInfo(String clientId, int start, int end) {
+        Set<Tuple> tuples = redis.zrangeWithScores(buildPopAckKey(clientId), start, end);
+        if (tuples == null || tuples.isEmpty()) {
+            return null;
+        }
+        List<PopAckInfo> list = new ArrayList<>();
+        for (Tuple tuple : tuples) {
+            Pair<Integer, String> pair = getPopAckInfo(clientId, tuple.getElement());
+            if (pair == null) {
+                pair = Pair.of(-1, null);
+            }
+            list.add(PopAckInfo.build(tuple.getElement(), (long) tuple.getScore(), pair.getObject1(), pair.getObject2()));
+        }
+        return list;
+    }
+
+    /**
+     * 提交pop ack
+     */
+    public MQProxyResponse<String> commitPopAck(FetchRequest fetchRequest) {
+        MQProxyResponse response = MQProxyResponse.buildOKResponse();
+        String requestId = fetchRequest.getRequestId();
+        if (StringUtils.isBlank(requestId)) {
+            response.setMessage("ack illegal " + fetchRequest.getAckInfo());
+            response.setStatus(400);
+            return response;
+        }
+        Long rst = redis.zrem(buildPopAckKey(fetchRequest.getClientId()), requestId);
+        if (rst != null && rst == 1) {
+            response.setMessage("ok " + fetchRequest.getAckInfo());
+            deletePopAckInfo(fetchRequest.getClientId(), requestId);
+        } else {
+            response.setMessage("pop ack not exist " + fetchRequest.getAckInfo());
+            log.error("pop ack not exist:{}", fetchRequest.getAckInfo());
+        }
+        return response;
+    }
+
+
+    /**
+     * 保存处理中的pop ack
+     */
+    public MQProxyResponse<String> saveProcessingPopAck(FetchRequest fetchRequest) {
+        MQProxyResponse response = MQProxyResponse.buildOKResponse();
+        String requestId = fetchRequest.getRequestId();
+        if (requestId == null) {
+            response.setMessage("ack illegal " + fetchRequest.getAckInfo());
+            response.setStatus(400);
+            return response;
+        }
+        long score = fetchRequest.getLockTime() + fetchRequest.getConsumeTimeout();
+        Long rst = redis.zadd(buildPopAckKey(fetchRequest.getClientId()), score, requestId);
+        if (rst != null && rst == 1) {
+            response.setMessage("ok " + fetchRequest.getAckInfo());
+            // 记录ip和重试次数
+            savePopAckInfo(fetchRequest.getClientId(), requestId, 0, fetchRequest.getClientIp());
+        } else {
+            response.setMessage("record ack failed " + fetchRequest.getAckInfo());
+        }
+        return response;
+    }
+
+    /**
+     * 获取超时的pop ack
+     */
+    public FetchRequest getTimeoutPopAck(FetchRequest fetchRequest) {
+        String key = buildPopAckKey(fetchRequest.getClientId());
+        // 获取score最小的一条数据，score为过期时间
+        Set<Tuple> sets = redis.zrangeWithScores(key, 0, 0);
+        if (sets == null || sets.isEmpty()) {
+            return null;
+        }
+        Tuple tuple = sets.iterator().next();
+        // 没有超时直接返回
+        if (System.currentTimeMillis() < tuple.getScore()) {
+            return null;
+        }
+        // 更新score
+        String requestId = tuple.getElement();
+        long score = (long) (tuple.getScore() + fetchRequest.getConsumeTimeout());
+        if (score < System.currentTimeMillis()) {
+            long now = System.currentTimeMillis();
+            // 2秒内的时间戳重置为相同，避免重复消费过期消息
+            now -= now % 2000;
+            score = now + fetchRequest.getConsumeTimeout();
+        }
+        Long addRst = redis.zadd(key, score, requestId, ZAddParams.zAddParams().xx().ch());
+        // 更新失败，说明该ack已经被消费或者其他线程已经更新了过期时间，直接返回
+        if (addRst == null || addRst == 0) {
+            log.error("update pop ack score failed:{}", FetchRequest.build(requestId));
+            return null;
+        }
+        // 更新 ack信息，重试次数加1，ip更新为最新的
+        updatePopAckInfo(fetchRequest, requestId);
+        return FetchRequest.build(requestId);
+    }
+
+    public void updatePopAckInfo(FetchRequest fetchRequest, String requestId) {
+        Pair<Integer, String> ackInfo = getPopAckInfo(fetchRequest.getClientId(), requestId);
+        int retryTimes = ackInfo == null ? 1 : ackInfo.getObject1() + 1;
+        savePopAckInfo(fetchRequest.getClientId(), requestId, retryTimes, fetchRequest.getClientIp());
+    }
+
+    public void savePopAckInfo(String clientId, String requestId, int retryTimes, String ip) {
+        int expireTime = (int) (consumerProxy.getConsumeTimeoutInMillis() + 36 * 3600 * 1000);
+        try {
+            redis.set(buildPopAckInfoKey(clientId, requestId), retryTimes + SPLITER + ip, SetParams.setParams().px(expireTime));
+        } catch (Exception e) {
+            log.error("savePopAckInfo clientId:{} requestId:{} retryTimes:{} ip:{} error", clientId, requestId, retryTimes, ip, e);
+        }
+    }
+
+    public void deletePopAckInfo(String clientId, String requestId) {
+        try {
+            redis.del(buildPopAckInfoKey(clientId, requestId));
+        } catch (Exception e) {
+            log.error("deletePopAckInfo clientId:{} requestId:{} error", clientId, requestId, e);
+        }
+    }
+
+    /**
+     * 获取pop ack信息
+     */
+    public Pair<Integer, String> getPopAckInfo(String clientId, String requestId) {
+        try {
+            String value = redis.get(buildPopAckInfoKey(clientId, requestId));
+            if (value != null) {
+                String[] arr = value.split(SPLITER);
+                if (arr.length == 2) {
+                    return Pair.of(Integer.valueOf(arr[0]), arr[1]);
+                }
+            }
+        } catch (Exception e) {
+            log.error("getPopAckInfo clientId:{} requestId:{} error", clientId, requestId, e);
+        }
+        return null;
+    }
+
+    private String buildPopAckKey(String clientId) {
+        return toKey(clientId) + SPLITER + "pop";
+    }
+
+    private String buildPopAckInfoKey(String clientId, String requestId) {
+        return toKey(clientId) + SPLITER + requestId;
     }
 }

@@ -23,6 +23,14 @@ public class ConsumeParam {
     private boolean useCookie;
     // 客户端ip: 用于记录当前哪个客户端在消费队列
     private String clientIp;
+    // 轻量topic
+    private String liteTopic;
+
+    private Integer maxPullSize;
+    private Long consumeTimeout;
+    private Long pullTimeout;
+
+    private boolean pop;
 
     public boolean isClientIpBlank() {
         if (clientIp == null) {
